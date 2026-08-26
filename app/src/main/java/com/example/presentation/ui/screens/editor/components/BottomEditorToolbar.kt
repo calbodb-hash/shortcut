@@ -22,17 +22,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.domain.model.SelectionTarget
 import com.example.presentation.viewmodel.EditorToolGroup
 import com.example.ui.theme.*
 
 @Composable
 fun BottomEditorToolbar(
-    isClipSelected: Boolean,
+    selection: SelectionTarget?,
     activeToolGroup: EditorToolGroup,
     onToolClick: (EditorToolGroup) -> Unit,
     onSplitClick: () -> Unit,
-    onDeleteClipClick: () -> Unit,
-    onDuplicateClipClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    onDuplicateClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -46,123 +47,190 @@ fun BottomEditorToolbar(
             .horizontalScroll(scrollState)
             .padding(horizontal = 8.dp, vertical = 6.dp)
     ) {
-        if (isClipSelected) {
-            // Clip Selected Contextual Tools
-            ToolbarItem(
-                icon = Icons.Default.ContentCut,
-                label = "Split",
-                isSelected = false,
-                onClick = onSplitClick,
-                testTag = "toolbar_split_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.Crop,
-                label = "Crop",
-                isSelected = activeToolGroup == EditorToolGroup.CROP,
-                onClick = { onToolClick(EditorToolGroup.CROP) },
-                testTag = "toolbar_crop_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.FitScreen,
-                label = "Framing",
-                isSelected = activeToolGroup == EditorToolGroup.FRAMING,
-                onClick = { onToolClick(EditorToolGroup.FRAMING) },
-                testTag = "toolbar_framing_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.Speed,
-                label = "Speed",
-                isSelected = activeToolGroup == EditorToolGroup.SPEED,
-                onClick = { onToolClick(EditorToolGroup.SPEED) },
-                testTag = "toolbar_speed_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.CropRotate,
-                label = "Transform",
-                isSelected = activeToolGroup == EditorToolGroup.TRANSFORM,
-                onClick = { onToolClick(EditorToolGroup.TRANSFORM) },
-                testTag = "toolbar_transform_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.Tune,
-                label = "Adjust",
-                isSelected = activeToolGroup == EditorToolGroup.ADJUST,
-                onClick = { onToolClick(EditorToolGroup.ADJUST) },
-                testTag = "toolbar_adjust_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.AutoAwesome,
-                label = "Filters",
-                isSelected = activeToolGroup == EditorToolGroup.FILTER,
-                onClick = { onToolClick(EditorToolGroup.FILTER) },
-                testTag = "toolbar_filter_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.VolumeUp,
-                label = "Volume",
-                isSelected = activeToolGroup == EditorToolGroup.AUDIO,
-                onClick = { onToolClick(EditorToolGroup.AUDIO) },
-                testTag = "toolbar_volume_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.ContentCopy,
-                label = "Duplicate",
-                isSelected = false,
-                onClick = onDuplicateClipClick,
-                testTag = "toolbar_duplicate_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.DeleteOutline,
-                label = "Delete",
-                isSelected = false,
-                tint = ShortCutAccent,
-                onClick = onDeleteClipClick,
-                testTag = "toolbar_delete_button"
-            )
-        } else {
-            // Root Contextual Tools (Timeline Level)
-            ToolbarItem(
-                icon = Icons.Default.ContentCut,
-                label = "Split",
-                isSelected = false,
-                onClick = onSplitClick,
-                testTag = "toolbar_split_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.Audiotrack,
-                label = "Audio",
-                isSelected = activeToolGroup == EditorToolGroup.AUDIO,
-                onClick = { onToolClick(EditorToolGroup.AUDIO) },
-                testTag = "toolbar_audio_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.TextFields,
-                label = "Text",
-                isSelected = activeToolGroup == EditorToolGroup.TEXT,
-                onClick = { onToolClick(EditorToolGroup.TEXT) },
-                testTag = "toolbar_text_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.Tune,
-                label = "Adjust",
-                isSelected = activeToolGroup == EditorToolGroup.ADJUST,
-                onClick = { onToolClick(EditorToolGroup.ADJUST) },
-                testTag = "toolbar_adjust_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.AutoAwesome,
-                label = "Filters",
-                isSelected = activeToolGroup == EditorToolGroup.FILTER,
-                onClick = { onToolClick(EditorToolGroup.FILTER) },
-                testTag = "toolbar_filter_button"
-            )
-            ToolbarItem(
-                icon = Icons.Default.AspectRatio,
-                label = "Canvas",
-                isSelected = activeToolGroup == EditorToolGroup.CANVAS,
-                onClick = { onToolClick(EditorToolGroup.CANVAS) },
-                testTag = "toolbar_canvas_button"
-            )
+        when (selection) {
+            is SelectionTarget.Video, is SelectionTarget.Overlay -> {
+                // Video Clip / Overlay Selected Contextual Tools
+                ToolbarItem(
+                    icon = Icons.Default.ContentCut,
+                    label = "Split",
+                    isSelected = false,
+                    onClick = onSplitClick,
+                    testTag = "toolbar_split_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.Crop,
+                    label = "Crop",
+                    isSelected = activeToolGroup == EditorToolGroup.CROP,
+                    onClick = { onToolClick(EditorToolGroup.CROP) },
+                    testTag = "toolbar_crop_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.FitScreen,
+                    label = "Framing",
+                    isSelected = activeToolGroup == EditorToolGroup.FRAMING,
+                    onClick = { onToolClick(EditorToolGroup.FRAMING) },
+                    testTag = "toolbar_framing_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.Speed,
+                    label = "Speed",
+                    isSelected = activeToolGroup == EditorToolGroup.SPEED,
+                    onClick = { onToolClick(EditorToolGroup.SPEED) },
+                    testTag = "toolbar_speed_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.CropRotate,
+                    label = "Transform",
+                    isSelected = activeToolGroup == EditorToolGroup.TRANSFORM,
+                    onClick = { onToolClick(EditorToolGroup.TRANSFORM) },
+                    testTag = "toolbar_transform_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.Tune,
+                    label = "Adjust",
+                    isSelected = activeToolGroup == EditorToolGroup.ADJUST,
+                    onClick = { onToolClick(EditorToolGroup.ADJUST) },
+                    testTag = "toolbar_adjust_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.AutoAwesome,
+                    label = "Filters",
+                    isSelected = activeToolGroup == EditorToolGroup.FILTER,
+                    onClick = { onToolClick(EditorToolGroup.FILTER) },
+                    testTag = "toolbar_filter_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.VolumeUp,
+                    label = "Volume",
+                    isSelected = activeToolGroup == EditorToolGroup.AUDIO,
+                    onClick = { onToolClick(EditorToolGroup.AUDIO) },
+                    testTag = "toolbar_volume_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.ContentCopy,
+                    label = "Duplicate",
+                    isSelected = false,
+                    onClick = onDuplicateClick,
+                    testTag = "toolbar_duplicate_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.DeleteOutline,
+                    label = "Delete",
+                    isSelected = false,
+                    tint = ShortCutAccent,
+                    onClick = onDeleteClick,
+                    testTag = "toolbar_delete_button"
+                )
+            }
+            is SelectionTarget.Text -> {
+                // Text Layer Selected Contextual Tools
+                ToolbarItem(
+                    icon = Icons.Default.Edit,
+                    label = "Edit",
+                    isSelected = activeToolGroup == EditorToolGroup.TEXT,
+                    onClick = { onToolClick(EditorToolGroup.TEXT) },
+                    testTag = "toolbar_text_edit_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.Style,
+                    label = "Style",
+                    isSelected = activeToolGroup == EditorToolGroup.TEXT,
+                    onClick = { onToolClick(EditorToolGroup.TEXT) },
+                    testTag = "toolbar_text_style_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.DeleteOutline,
+                    label = "Delete",
+                    isSelected = false,
+                    tint = ShortCutAccent,
+                    onClick = onDeleteClick,
+                    testTag = "toolbar_delete_text_button"
+                )
+            }
+            is SelectionTarget.Audio -> {
+                // Audio Clip Selected Contextual Tools
+                ToolbarItem(
+                    icon = Icons.Default.ContentCut,
+                    label = "Split",
+                    isSelected = false,
+                    onClick = onSplitClick,
+                    testTag = "toolbar_split_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.VolumeUp,
+                    label = "Volume",
+                    isSelected = activeToolGroup == EditorToolGroup.AUDIO,
+                    onClick = { onToolClick(EditorToolGroup.AUDIO) },
+                    testTag = "toolbar_audio_volume_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.Speed,
+                    label = "Speed",
+                    isSelected = activeToolGroup == EditorToolGroup.AUDIO,
+                    onClick = { onToolClick(EditorToolGroup.AUDIO) },
+                    testTag = "toolbar_audio_speed_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.ContentCopy,
+                    label = "Duplicate",
+                    isSelected = false,
+                    onClick = onDuplicateClick,
+                    testTag = "toolbar_duplicate_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.DeleteOutline,
+                    label = "Delete",
+                    isSelected = false,
+                    tint = ShortCutAccent,
+                    onClick = onDeleteClick,
+                    testTag = "toolbar_delete_audio_button"
+                )
+            }
+            null -> {
+                // Root Contextual Tools (Timeline Level)
+                ToolbarItem(
+                    icon = Icons.Default.ContentCut,
+                    label = "Split",
+                    isSelected = false,
+                    onClick = onSplitClick,
+                    testTag = "toolbar_split_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.Audiotrack,
+                    label = "Audio",
+                    isSelected = activeToolGroup == EditorToolGroup.AUDIO,
+                    onClick = { onToolClick(EditorToolGroup.AUDIO) },
+                    testTag = "toolbar_audio_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.TextFields,
+                    label = "Text",
+                    isSelected = activeToolGroup == EditorToolGroup.TEXT,
+                    onClick = { onToolClick(EditorToolGroup.TEXT) },
+                    testTag = "toolbar_text_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.Tune,
+                    label = "Adjust",
+                    isSelected = activeToolGroup == EditorToolGroup.ADJUST,
+                    onClick = { onToolClick(EditorToolGroup.ADJUST) },
+                    testTag = "toolbar_adjust_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.AutoAwesome,
+                    label = "Filters",
+                    isSelected = activeToolGroup == EditorToolGroup.FILTER,
+                    onClick = { onToolClick(EditorToolGroup.FILTER) },
+                    testTag = "toolbar_filter_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.AspectRatio,
+                    label = "Canvas",
+                    isSelected = activeToolGroup == EditorToolGroup.CANVAS,
+                    onClick = { onToolClick(EditorToolGroup.CANVAS) },
+                    testTag = "toolbar_canvas_button"
+                )
+            }
         }
     }
 }

@@ -44,11 +44,30 @@ interface ITimelineEngine {
     fun toggleTrackMute(timeline: Timeline, trackId: String): Timeline
     fun toggleTrackLock(timeline: Timeline, trackId: String): Timeline
     fun toggleTrackVisibility(timeline: Timeline, trackId: String): Timeline
+    fun isTrackLocked(timeline: Timeline, trackId: String): Boolean
 }
 
 class TimelineEngine : ITimelineEngine {
 
+    override fun isTrackLocked(timeline: Timeline, trackId: String): Boolean {
+        return timeline.tracks.find { it.id == trackId }?.isLocked == true
+    }
+
+    private fun isVideoTrackLocked(timeline: Timeline, clipId: String): Boolean {
+        return isTrackLocked(timeline, "track_video_main")
+    }
+
+    private fun isTextTrackLocked(timeline: Timeline, layerId: String): Boolean {
+        return isTrackLocked(timeline, "track_text_main")
+    }
+
+    private fun isAudioTrackLocked(timeline: Timeline, audioId: String): Boolean {
+        val audio = timeline.audioClips.find { it.id == audioId } ?: return false
+        return isTrackLocked(timeline, audio.trackId)
+    }
+
     override fun splitClip(timeline: Timeline, clipId: String, splitPositionTimelineMs: Long): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val clipIndex = timeline.videoClips.indexOfFirst { it.id == clipId }
         if (clipIndex == -1) return timeline
 
@@ -91,6 +110,7 @@ class TimelineEngine : ITimelineEngine {
         newSourceStartMs: Long,
         newSourceEndMs: Long
     ): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map { clip ->
             if (clip.id == clipId) {
                 val minDur = TimelineTimeUtils.MIN_CLIP_DURATION_MS
@@ -107,12 +127,14 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun deleteClip(timeline: Timeline, clipId: String): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.filterNot { it.id == clipId }
         val updatedTimeline = timeline.copy(videoClips = updatedClips)
         return updatedTimeline.copy(videoClips = updatedTimeline.recalculateClipTimelineStarts())
     }
 
     override fun duplicateClip(timeline: Timeline, clipId: String): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val clipIndex = timeline.videoClips.indexOfFirst { it.id == clipId }
         if (clipIndex == -1) return timeline
 
@@ -130,6 +152,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun reorderClips(timeline: Timeline, fromIndex: Int, toIndex: Int): Timeline {
+        if (isTrackLocked(timeline, "track_video_main")) return timeline
         if (fromIndex !in timeline.videoClips.indices || toIndex !in timeline.videoClips.indices || fromIndex == toIndex) {
             return timeline
         }
@@ -142,6 +165,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun updateClipTransform(timeline: Timeline, clipId: String, transform: Transform): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map {
             if (it.id == clipId) it.copy(transform = transform) else it
         }
@@ -149,6 +173,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun updateClipCrop(timeline: Timeline, clipId: String, crop: CropState): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map {
             if (it.id == clipId) it.copy(transform = it.transform.copy(crop = crop)) else it
         }
@@ -156,6 +181,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun updateClipFramingMode(timeline: Timeline, clipId: String, framingMode: FramingMode): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map {
             if (it.id == clipId) it.copy(transform = it.transform.copy(framingMode = framingMode)) else it
         }
@@ -163,6 +189,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun resetClipTransform(timeline: Timeline, clipId: String): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map {
             if (it.id == clipId) it.copy(transform = Transform(crop = it.transform.crop)) else it
         }
@@ -170,6 +197,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun resetClipAdjustments(timeline: Timeline, clipId: String): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map {
             if (it.id == clipId) it.copy(adjustments = ColorAdjustment()) else it
         }
@@ -177,6 +205,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun resetClipCrop(timeline: Timeline, clipId: String): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map {
             if (it.id == clipId) it.copy(transform = it.transform.copy(crop = CropState())) else it
         }
@@ -184,6 +213,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun updateClipAdjustments(timeline: Timeline, clipId: String, adjustments: ColorAdjustment): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map {
             if (it.id == clipId) it.copy(adjustments = adjustments) else it
         }
@@ -191,6 +221,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun updateClipFilter(timeline: Timeline, clipId: String, filter: FilterPreset): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map {
             if (it.id == clipId) it.copy(filter = filter) else it
         }
@@ -198,6 +229,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun updateClipEffect(timeline: Timeline, clipId: String, effect: EffectPreset): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map {
             if (it.id == clipId) it.copy(effect = effect) else it
         }
@@ -205,6 +237,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun updateClipSpeed(timeline: Timeline, clipId: String, speed: Float): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val validSpeed = speed.coerceIn(0.1f, 10.0f)
         val updatedClips = timeline.videoClips.map {
             if (it.id == clipId) it.copy(speed = validSpeed) else it
@@ -214,6 +247,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun updateClipVolume(timeline: Timeline, clipId: String, volume: Float, isMuted: Boolean): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map {
             if (it.id == clipId) it.copy(volume = volume.coerceIn(0f, 2f), isMuted = isMuted) else it
         }
@@ -227,6 +261,7 @@ class TimelineEngine : ITimelineEngine {
         newName: String,
         newDurationMs: Long
     ): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val updatedClips = timeline.videoClips.map { clip ->
             if (clip.id == clipId) {
                 val validDuration = newDurationMs.coerceAtLeast(TimelineTimeUtils.MIN_CLIP_DURATION_MS)
@@ -251,6 +286,7 @@ class TimelineEngine : ITimelineEngine {
         atTimeMs: Long,
         freezeDurationMs: Long
     ): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
         val clipIndex = timeline.videoClips.indexOfFirst { it.id == clipId }
         if (clipIndex == -1) return timeline
 
@@ -308,11 +344,13 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun addTextLayer(timeline: Timeline, textLayer: TextLayer): Timeline {
+        if (isTrackLocked(timeline, "track_text_main")) return timeline
         val updatedLayers = timeline.textLayers + textLayer
         return timeline.copy(textLayers = updatedLayers)
     }
 
     override fun updateTextLayer(timeline: Timeline, textLayer: TextLayer): Timeline {
+        if (isTextTrackLocked(timeline, textLayer.id)) return timeline
         val updatedLayers = timeline.textLayers.map {
             if (it.id == textLayer.id) textLayer else it
         }
@@ -320,6 +358,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun updateTextLayerTime(timeline: Timeline, layerId: String, newStartMs: Long, newDurationMs: Long): Timeline {
+        if (isTextTrackLocked(timeline, layerId)) return timeline
         val updatedLayers = timeline.textLayers.map {
             if (it.id == layerId) {
                 it.copy(
@@ -332,11 +371,13 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun deleteTextLayer(timeline: Timeline, layerId: String): Timeline {
+        if (isTextTrackLocked(timeline, layerId)) return timeline
         val updatedLayers = timeline.textLayers.filterNot { it.id == layerId }
         return timeline.copy(textLayers = updatedLayers)
     }
 
     override fun addAudioClip(timeline: Timeline, audioClip: AudioClip): Timeline {
+        if (isTrackLocked(timeline, audioClip.trackId)) return timeline
         val updatedAudios = timeline.audioClips + audioClip
         return timeline.copy(audioClips = updatedAudios)
     }
@@ -346,6 +387,7 @@ class TimelineEngine : ITimelineEngine {
         audioId: String,
         splitPositionTimelineMs: Long
     ): Timeline {
+        if (isAudioTrackLocked(timeline, audioId)) return timeline
         val audioIndex = timeline.audioClips.indexOfFirst { it.id == audioId }
         if (audioIndex == -1) return timeline
 
@@ -391,6 +433,7 @@ class TimelineEngine : ITimelineEngine {
         newSourceStartMs: Long,
         newSourceEndMs: Long
     ): Timeline {
+        if (isAudioTrackLocked(timeline, audioId)) return timeline
         val updatedAudios = timeline.audioClips.map { clip ->
             if (clip.id == audioId) {
                 val minDur = TimelineTimeUtils.MIN_CLIP_DURATION_MS
@@ -412,6 +455,7 @@ class TimelineEngine : ITimelineEngine {
         audioId: String,
         newTimelineStartMs: Long
     ): Timeline {
+        if (isAudioTrackLocked(timeline, audioId)) return timeline
         val updatedAudios = timeline.audioClips.map {
             if (it.id == audioId) {
                 it.copy(timelineStartMs = newTimelineStartMs.coerceAtLeast(0L))
@@ -421,6 +465,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun duplicateAudioClip(timeline: Timeline, audioId: String): Timeline {
+        if (isAudioTrackLocked(timeline, audioId)) return timeline
         val audioIndex = timeline.audioClips.indexOfFirst { it.id == audioId }
         if (audioIndex == -1) return timeline
 
@@ -438,6 +483,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun deleteAudioClip(timeline: Timeline, audioId: String): Timeline {
+        if (isAudioTrackLocked(timeline, audioId)) return timeline
         val updatedAudios = timeline.audioClips.filterNot { it.id == audioId }
         return timeline.copy(audioClips = updatedAudios)
     }
@@ -448,6 +494,7 @@ class TimelineEngine : ITimelineEngine {
         newStartMs: Long,
         newDurationMs: Long
     ): Timeline {
+        if (isAudioTrackLocked(timeline, audioId)) return timeline
         val updatedAudios = timeline.audioClips.map {
             if (it.id == audioId) {
                 it.copy(
@@ -465,6 +512,7 @@ class TimelineEngine : ITimelineEngine {
         volume: Float,
         isMuted: Boolean
     ): Timeline {
+        if (isAudioTrackLocked(timeline, audioId)) return timeline
         val updatedAudios = timeline.audioClips.map {
             if (it.id == audioId) {
                 it.copy(volume = volume.coerceIn(0f, 2.0f), isMuted = isMuted)
@@ -479,6 +527,7 @@ class TimelineEngine : ITimelineEngine {
         fadeInMs: Long,
         fadeOutMs: Long
     ): Timeline {
+        if (isAudioTrackLocked(timeline, audioId)) return timeline
         val updatedAudios = timeline.audioClips.map {
             if (it.id == audioId) {
                 it.copy(
@@ -491,6 +540,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun updateAudioClipPan(timeline: Timeline, audioId: String, pan: Float): Timeline {
+        if (isAudioTrackLocked(timeline, audioId)) return timeline
         val updatedAudios = timeline.audioClips.map {
             if (it.id == audioId) {
                 it.copy(pan = pan.coerceIn(-1.0f, 1.0f))
@@ -500,6 +550,7 @@ class TimelineEngine : ITimelineEngine {
     }
 
     override fun updateAudioClipSpeed(timeline: Timeline, audioId: String, speed: Float): Timeline {
+        if (isAudioTrackLocked(timeline, audioId)) return timeline
         val validSpeed = speed.coerceIn(0.1f, 10.0f)
         val updatedAudios = timeline.audioClips.map {
             if (it.id == audioId) {
@@ -517,6 +568,7 @@ class TimelineEngine : ITimelineEngine {
         enabled: Boolean,
         level: Float
     ): Timeline {
+        if (isAudioTrackLocked(timeline, audioId)) return timeline
         val updatedAudios = timeline.audioClips.map {
             if (it.id == audioId) {
                 it.copy(duckingEnabled = enabled, duckingLevel = level.coerceIn(0f, 1f))

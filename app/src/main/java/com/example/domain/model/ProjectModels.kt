@@ -184,6 +184,13 @@ data class AudioClip(
     }
 }
 
+sealed interface SelectionTarget {
+    data class Video(val clipId: String) : SelectionTarget
+    data class Overlay(val overlayId: String) : SelectionTarget
+    data class Audio(val audioId: String) : SelectionTarget
+    data class Text(val layerId: String) : SelectionTarget
+}
+
 data class TextLayer(
     val id: String,
     val text: String,
@@ -198,7 +205,8 @@ data class TextLayer(
     val backgroundColorArgb: Long = 0x88000000,
     val hasBackground: Boolean = false,
     val isBold: Boolean = true,
-    val alignment: Int = 1 // 0: Start, 1: Center, 2: End
+    val alignment: Int = 1, // 0: Start, 1: Center, 2: End
+    val linkedToObjectId: String? = null
 )
 
 data class Timeline(

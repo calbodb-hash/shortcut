@@ -154,9 +154,9 @@ fun EditorScreen(
                         totalDurationMs = project.timeline.totalDurationMs,
                         isPlaying = uiState.isPlaying,
                         activeToolGroup = uiState.activeToolGroup,
+                        selection = uiState.selection,
                         onTogglePlayPause = { editorViewModel.togglePlayPause() },
-                        onSelectTextLayer = { editorViewModel.selectTextLayer(it) },
-                        selectedTextLayerId = uiState.selectedTextLayerId,
+                        onSelectTarget = { editorViewModel.select(it) },
                         onTransformChange = { editorViewModel.updateSelectedTransform(it, recordHistory = false) },
                         onCropChange = { editorViewModel.updateSelectedCrop(it, recordHistory = false) },
                         onGestureCommit = { editorViewModel.commitGestureHistory() },
@@ -416,7 +416,7 @@ fun EditorScreen(
 
                     // 5. Contextual Bottom Toolbar
                     BottomEditorToolbar(
-                        isClipSelected = uiState.selectedClipId != null || uiState.selectedAudioClipId != null,
+                        selection = uiState.selection,
                         activeToolGroup = uiState.activeToolGroup,
                         onToolClick = { editorViewModel.setToolGroup(it) },
                         onSplitClick = {
@@ -426,18 +426,35 @@ fun EditorScreen(
                                 editorViewModel.splitCurrentClip()
                             }
                         },
-                        onDeleteClipClick = {
-                            if (uiState.selectedAudioClipId != null) {
-                                editorViewModel.deleteAudioClip(uiState.selectedAudioClipId!!)
-                            } else {
-                                editorViewModel.deleteSelectedClip()
+                        onDeleteClick = {
+                            when (val sel = uiState.selection) {
+                                is com.example.domain.model.SelectionTarget.Video, is com.example.domain.model.SelectionTarget.Overlay -> {
+                                    editorViewModel.deleteSelectedClip()
+                                }
+                                is com.example.domain.model.SelectionTarget.Audio -> {
+                                    editorViewModel.deleteAudioClip(sel.audioId)
+                                }
+                                is com.example.domain.model.SelectionTarget.Text -> {
+                                    editorViewModel.deleteSelectedTextLayer()
+                                }
+                                null -> {}
                             }
                         },
-                        onDuplicateClipClick = {
-                            if (uiState.selectedAudioClipId != null) {
-                                editorViewModel.duplicateAudioClip(uiState.selectedAudioClipId!!)
-                            } else {
-                                editorViewModel.duplicateSelectedClip()
+                        onDuplicateClick = {
+                            when (val sel = uiState.selection) {
+                                is com.example.domain.model.SelectionTarget.Video, is com.example.domain.model.SelectionTarget.Overlay -> {
+                                    editorViewModel.duplicateSelectedClip()
+                                }
+                                is com.example.domain.model.SelectionTarget.Audio -> {
+                                    editorViewModel.duplicateAudioClip(sel.audioId)
+                                }
+                                is com.example.domain.model.SelectionTarget.Text -> {
+                                    // Duplicate text layer
+                                    selectedTextLayer?.let { tl ->
+                                        editorViewModel.addTextLayer(tl.text)
+                                    }
+                                }
+                                null -> {}
                             }
                         }
                     )

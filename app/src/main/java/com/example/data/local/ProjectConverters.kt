@@ -114,6 +114,7 @@ class ProjectConverters {
                 put("hasBackground", text.hasBackground)
                 put("isBold", text.isBold)
                 put("alignment", text.alignment)
+                text.linkedToObjectId?.let { put("linkedToObjectId", it) }
             }
             textArray.put(obj)
         }
@@ -298,7 +299,8 @@ class ProjectConverters {
                             backgroundColorArgb = obj.optLong("backgroundColorArgb", 0x88000000),
                             hasBackground = obj.optBoolean("hasBackground", false),
                             isBold = obj.optBoolean("isBold", true),
-                            alignment = obj.optInt("alignment", 1)
+                            alignment = obj.optInt("alignment", 1),
+                            linkedToObjectId = if (obj.has("linkedToObjectId") && !obj.isNull("linkedToObjectId")) obj.optString("linkedToObjectId", null) else null
                         )
                     )
                 }

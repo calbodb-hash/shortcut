@@ -479,4 +479,77 @@ class TimelineEngineTest {
 
         assertEquals(12000L, frozenTimeline.totalDurationMs)
     }
+
+    // ==========================================
+    // 8. PHASE 3.5: TRACK LOCKING & SELECTION TESTS
+    // ==========================================
+
+    @Test
+    fun `test track locking prevents clip split`() {
+        val baseTimeline = createSampleTimeline()
+        val lockedTimeline = engine.toggleTrackLock(baseTimeline, "track_video_main")
+        assertTrue(engine.isTrackLocked(lockedTimeline, "track_video_main"))
+
+        // Attempting to split clip on locked track should return unmodified timeline
+        val attemptedSplit = engine.splitClip(lockedTimeline, "clip_1", 2000L)
+        assertEquals(lockedTimeline.videoClips.size, attemptedSplit.videoClips.size)
+        assertEquals(lockedTimeline.videoClips, attemptedSplit.videoClips)
+    }
+
+    @Test
+    fun `test track locking prevents clip trim and delete`() {
+        val baseTimeline = createSampleTimeline()
+        val lockedTimeline = engine.toggleTrackLock(baseTimeline, "track_video_main")
+
+        // Attempt trim
+        val attemptedTrim = engine.trimClip(lockedTimeline, "clip_1", 1000L, 4000L)
+        assertEquals(lockedTimeline.videoClips, attemptedTrim.videoClips)
+
+        // Attempt delete
+        val attemptedDelete = engine.deleteClip(lockedTimeline, "clip_1")
+        assertEquals(lockedTimeline.videoClips, attemptedDelete.videoClips)
+    }
+
+    @Test
+    fun `test audio track locking prevents audio operations`() {
+        val baseTimeline = createSampleTimeline()
+        val audioClip = AudioClip(
+            id = "audio_1",
+            sourceUri = "sample://music.mp3",
+            title = "Test Music",
+            sourceDurationMs = 10000L,
+            sourceStartTimeMs = 0L,
+            sourceEndTimeMs = 8000L,
+            timelineStartMs = 0L,
+            timelineDurationMs = 8000L
+        )
+        val withAudio = baseTimeline.copy(audioClips = listOf(audioClip))
+        val lockedAudioTimeline = engine.toggleTrackLock(withAudio, "track_audio_music")
+
+        // Attempt delete audio clip
+        val attemptedDelete = engine.deleteAudioClip(lockedAudioTimeline, "audio_1")
+        assertEquals(1, attemptedDelete.audioClips.size)
+
+        // Attempt trim audio clip
+        val attemptedTrim = engine.trimAudioClip(lockedAudioTimeline, "audio_1", 1000L, 5000L)
+        assertEquals(8000L, attemptedTrim.audioClips[0].timelineDurationMs)
+    }
+
+    @Test
+    fun `test text layer linked to clip retained during timeline operations`() {
+        val baseTimeline = createSampleTimeline()
+        val linkedText = TextLayer(
+            id = "text_linked_1",
+            text = "Title on Clip 1",
+            timelineStartMs = 1000L,
+            timelineDurationMs = 2000L,
+            linkedToObjectId = "clip_1"
+        )
+        val timelineWithText = baseTimeline.copy(textLayers = listOf(linkedText))
+
+        assertEquals("clip_1", timelineWithText.textLayers[0].linkedToObjectId)
+        val updatedText = engine.updateTextLayer(timelineWithText, linkedText.copy(text = "Updated Title"))
+        assertEquals("clip_1", updatedText.textLayers[0].linkedToObjectId)
+        assertEquals("Updated Title", updatedText.textLayers[0].text)
+    }
 }

@@ -36,9 +36,7 @@ enum class EditorToolGroup {
 
 data class EditorUiState(
     val project: Project? = null,
-    val selectedClipId: String? = null,
-    val selectedTextLayerId: String? = null,
-    val selectedAudioClipId: String? = null,
+    val selection: SelectionTarget? = null,
     val activeToolGroup: EditorToolGroup = EditorToolGroup.NONE,
     val playheadMs: Long = 0L,
     val isPlaying: Boolean = false,
@@ -53,7 +51,11 @@ data class EditorUiState(
     val statusMessage: String? = null,
     val pxPerSecond: Float = 80f,
     val isSnappingEnabled: Boolean = true
-)
+) {
+    val selectedClipId: String? get() = (selection as? SelectionTarget.Video)?.clipId
+    val selectedTextLayerId: String? get() = (selection as? SelectionTarget.Text)?.layerId
+    val selectedAudioClipId: String? get() = (selection as? SelectionTarget.Audio)?.audioId
+}
 
 class EditorViewModel(
     private val projectId: String,
@@ -80,10 +82,11 @@ class EditorViewModel(
             val project = repository.getProject(projectId)
             if (project != null) {
                 previewEngine.setTimeline(project.timeline)
+                val initialClip = project.timeline.videoClips.firstOrNull()
                 _uiState.update {
                     it.copy(
                         project = project,
-                        selectedClipId = project.timeline.videoClips.firstOrNull()?.id
+                        selection = initialClip?.let { c -> SelectionTarget.Video(c.id) }
                     )
                 }
             }
@@ -180,35 +183,93 @@ class EditorViewModel(
     }
 
     // Selection
-    fun selectClip(clipId: String?) {
+    fun select(target: SelectionTarget?) {
+        if (target == null) {
+            clearSelection()
+            return
+        }
+
+        // Selection focus logic: if target is outside current playhead range, seek to its start time
+        val timeline = _uiState.value.project?.timeline
+        if (timeline != null) {
+            val currentPos = _uiState.value.playheadMs
+            when (target) {
+                is SelectionTarget.Video -> {
+                    val clip = timeline.videoClips.find { it.id == target.clipId }
+                    if (clip != null && (currentPos < clip.timelineStartMs || currentPos > clip.timelineStartMs + clip.trimmedDurationMs)) {
+                        seekTo(clip.timelineStartMs)
+                    }
+                }
+                is SelectionTarget.Text -> {
+                    val layer = timeline.textLayers.find { it.id == target.layerId }
+                    if (layer != null && (currentPos < layer.timelineStartMs || currentPos > layer.timelineStartMs + layer.timelineDurationMs)) {
+                        seekTo(layer.timelineStartMs)
+                    }
+                }
+                is SelectionTarget.Audio -> {
+                    val audio = timeline.audioClips.find { it.id == target.audioId }
+                    if (audio != null && (currentPos < audio.timelineStartMs || currentPos > audio.timelineStartMs + audio.trimmedDurationMs)) {
+                        seekTo(audio.timelineStartMs)
+                    }
+                }
+                is SelectionTarget.Overlay -> {
+                    val clip = timeline.videoClips.find { it.id == target.overlayId }
+                    if (clip != null && (currentPos < clip.timelineStartMs || currentPos > clip.timelineStartMs + clip.trimmedDurationMs)) {
+                        seekTo(clip.timelineStartMs)
+                    }
+                }
+            }
+        }
+
+        _uiState.update { current ->
+            val nextToolGroup = when (target) {
+                is SelectionTarget.Text -> if (current.activeToolGroup != EditorToolGroup.TEXT) EditorToolGroup.TEXT else current.activeToolGroup
+                is SelectionTarget.Audio -> if (current.activeToolGroup != EditorToolGroup.AUDIO) EditorToolGroup.AUDIO else current.activeToolGroup
+                else -> {
+                    if (current.activeToolGroup == EditorToolGroup.TEXT || current.activeToolGroup == EditorToolGroup.AUDIO) {
+                        EditorToolGroup.NONE
+                    } else {
+                        current.activeToolGroup
+                    }
+                }
+            }
+            current.copy(
+                selection = target,
+                activeToolGroup = nextToolGroup
+            )
+        }
+    }
+
+    fun clearSelection() {
         _uiState.update {
             it.copy(
-                selectedClipId = clipId,
-                selectedTextLayerId = null,
-                selectedAudioClipId = null
+                selection = null,
+                activeToolGroup = EditorToolGroup.NONE
             )
+        }
+    }
+
+    fun selectClip(clipId: String?) {
+        if (clipId != null) {
+            select(SelectionTarget.Video(clipId))
+        } else {
+            clearSelection()
         }
     }
 
     fun selectTextLayer(layerId: String?) {
-        _uiState.update {
-            it.copy(
-                selectedTextLayerId = layerId,
-                selectedClipId = null,
-                selectedAudioClipId = null,
-                activeToolGroup = if (layerId != null) EditorToolGroup.TEXT else it.activeToolGroup
-            )
+        if (layerId != null) {
+            select(SelectionTarget.Text(layerId))
+        } else {
+            clearSelection()
         }
     }
 
     fun selectAudioClip(audioId: String?) {
-        _uiState.update {
-            it.copy(
-                selectedAudioClipId = audioId,
-                selectedClipId = null,
-                selectedTextLayerId = null,
-                activeToolGroup = if (audioId != null) EditorToolGroup.AUDIO else it.activeToolGroup
-            )
+        if (audioId != null) {
+            select(SelectionTarget.Audio(audioId))
+        } else {
+            clearSelection()
         }
     }
 
@@ -261,7 +322,7 @@ class EditorViewModel(
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.deleteClip(timeline, selectedId)
         val nextSelected = newTimeline.videoClips.firstOrNull()?.id
-        _uiState.update { it.copy(selectedClipId = nextSelected) }
+        _uiState.update { it.copy(selection = nextSelected?.let { id -> SelectionTarget.Video(id) }) }
         updateTimeline(newTimeline)
         showStatus("Deleted Clip")
     }
@@ -426,7 +487,7 @@ class EditorViewModel(
             timelineDurationMs = 3000L
         )
         val newTimeline = timelineEngine.addTextLayer(timeline, newLayer)
-        _uiState.update { it.copy(selectedTextLayerId = newLayer.id) }
+        _uiState.update { it.copy(selection = SelectionTarget.Text(newLayer.id), activeToolGroup = EditorToolGroup.TEXT) }
         updateTimeline(newTimeline)
         showStatus("Added Text Layer")
     }
@@ -447,7 +508,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedTextLayerId ?: return
         val newTimeline = timelineEngine.deleteTextLayer(timeline, selectedId)
-        _uiState.update { it.copy(selectedTextLayerId = null) }
+        _uiState.update { it.copy(selection = null, activeToolGroup = EditorToolGroup.NONE) }
         updateTimeline(newTimeline)
         showStatus("Deleted Text Layer")
     }
@@ -511,7 +572,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.deleteAudioClip(timeline, audioId)
         if (_uiState.value.selectedAudioClipId == audioId) {
-            _uiState.update { it.copy(selectedAudioClipId = null, activeToolGroup = EditorToolGroup.NONE) }
+            _uiState.update { it.copy(selection = null, activeToolGroup = EditorToolGroup.NONE) }
         }
         updateTimeline(newTimeline)
         showStatus("Deleted Audio Clip")

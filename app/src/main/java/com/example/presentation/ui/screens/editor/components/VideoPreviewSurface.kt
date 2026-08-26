@@ -57,19 +57,32 @@ fun VideoPreviewSurface(
     totalDurationMs: Long,
     isPlaying: Boolean,
     activeToolGroup: EditorToolGroup,
+    selection: SelectionTarget? = null,
     onTogglePlayPause: () -> Unit,
-    onSelectTextLayer: (String?) -> Unit,
-    selectedTextLayerId: String?,
+    onSelectTarget: (SelectionTarget?) -> Unit = {},
+    onSelectTextLayer: (String?) -> Unit = { id -> onSelectTarget(id?.let { SelectionTarget.Text(it) }) },
+    selectedTextLayerId: String? = (selection as? SelectionTarget.Text)?.layerId,
     onTransformChange: (Transform) -> Unit = {},
     onCropChange: (CropState) -> Unit = {},
     onGestureCommit: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val isClipSelected = selection is SelectionTarget.Video || selection is SelectionTarget.Overlay
+    val effectiveSelectedClipId = when (selection) {
+        is SelectionTarget.Video -> selection.clipId
+        is SelectionTarget.Overlay -> selection.overlayId
+        else -> null
+    }
+
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .fillMaxWidth()
             .background(DarkCanvas)
+            .clickable {
+                // Tapping outer background clears selection
+                onSelectTarget(null)
+            }
     ) {
         // Video Preview Canvas fitted directly to aspect ratio
         BoxWithConstraints(
@@ -93,22 +106,24 @@ fun VideoPreviewSurface(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(activeClip.id, activeToolGroup) {
+                        .pointerInput(activeClip.id, activeToolGroup, selection) {
                             if (activeToolGroup == EditorToolGroup.TRANSFORM || activeToolGroup == EditorToolGroup.NONE) {
                                 detectTransformGestures(
                                     onGesture = { _, pan, zoom, rotation ->
-                                        val newScale = (transform.scale * zoom).coerceIn(0.2f, 5.0f)
-                                        val newRot = ((transform.rotation + rotation + 180f) % 360f) - 180f
-                                        val newTx = transform.translationX + pan.x
-                                        val newTy = transform.translationY + pan.y
-                                        onTransformChange(
-                                            transform.copy(
-                                                scale = newScale,
-                                                rotation = newRot,
-                                                translationX = newTx,
-                                                translationY = newTy
+                                        if (isClipSelected || selection == null) {
+                                            val newScale = (transform.scale * zoom).coerceIn(0.2f, 5.0f)
+                                            val newRot = ((transform.rotation + rotation + 180f) % 360f) - 180f
+                                            val newTx = transform.translationX + pan.x
+                                            val newTy = transform.translationY + pan.y
+                                            onTransformChange(
+                                                transform.copy(
+                                                    scale = newScale,
+                                                    rotation = newRot,
+                                                    translationX = newTx,
+                                                    translationY = newTy
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                 )
                             }
@@ -118,11 +133,15 @@ fun VideoPreviewSurface(
                         clip = activeClip,
                         playheadMs = playheadMs,
                         isPlaying = isPlaying,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable {
+                                onSelectTarget(SelectionTarget.Video(activeClip.id))
+                            }
                     )
 
-                    // Transform Bounding Box Guide Overlay (when in TRANSFORM tool group)
-                    if (activeToolGroup == EditorToolGroup.TRANSFORM) {
+                    // Transform Bounding Box Guide Overlay (when in TRANSFORM tool group or video clip is selected)
+                    if (activeToolGroup == EditorToolGroup.TRANSFORM || (isClipSelected && activeClip.id == effectiveSelectedClipId)) {
                         TransformBoundingBoxOverlay(
                             transform = transform,
                             modifier = Modifier.fillMaxSize()
@@ -144,7 +163,9 @@ fun VideoPreviewSurface(
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.padding(16.dp)
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .clickable { onSelectTarget(null) }
                 ) {
                     Text(
                         text = "SHORT CUT",
@@ -171,14 +192,17 @@ fun VideoPreviewSurface(
                     TextLayerOverlay(
                         layer = textLayer,
                         isSelected = textLayer.id == selectedTextLayerId,
-                        onSelect = { onSelectTextLayer(textLayer.id) }
+                        onSelect = {
+                            onSelectTarget(SelectionTarget.Text(textLayer.id))
+                            onSelectTextLayer(textLayer.id)
+                        }
                     )
                 }
             }
 
             // Play / Pause Floating Overlay Indicator (when tapping preview or paused)
             AnimatedVisibility(
-                visible = !isPlaying && activeToolGroup == EditorToolGroup.NONE,
+                visible = !isPlaying && activeToolGroup == EditorToolGroup.NONE && selection == null,
                 enter = fadeIn(),
                 exit = fadeOut(),
                 modifier = Modifier
@@ -640,6 +664,38 @@ private fun TextLayerOverlay(
                     }
                 )
             )
+
+            // Corner anchor handles when selected
+            if (isSelected) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .align(Alignment.TopStart)
+                        .offset(x = (-4).dp, y = (-4).dp)
+                        .background(ShortCutCyan, CircleShape)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .align(Alignment.TopEnd)
+                        .offset(x = 4.dp, y = (-4).dp)
+                        .background(ShortCutCyan, CircleShape)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .align(Alignment.BottomStart)
+                        .offset(x = (-4).dp, y = 4.dp)
+                        .background(ShortCutCyan, CircleShape)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 4.dp, y = 4.dp)
+                        .background(ShortCutCyan, CircleShape)
+                )
+            }
         }
     }
 }
