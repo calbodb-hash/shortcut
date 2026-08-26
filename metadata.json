@@ -1,0 +1,8 @@
+{
+  "name": "Remix Short Cut",
+  "description": "Professional short-form video editor engineered for smooth, responsive timeline editing and low-RAM mobile performance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
