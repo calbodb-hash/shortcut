@@ -48,9 +48,12 @@ object TimelineTimeUtils {
  */
 enum class TrackType {
     VIDEO,
-    OVERLAY,
+    VIDEO_MAIN,
+    VIDEO_OVERLAY,
     AUDIO,
     TEXT,
+    GRAPHIC,
+    OVERLAY,
     CAPTION,
     EFFECT
 }

@@ -104,15 +104,33 @@ data class ColorAdjustment(
                 opacity == 1.0f
 }
 
+/**
+ * Universal Timeline Item abstraction representing any temporal object positioned on the timeline.
+ */
+sealed interface TimelineItem {
+    val id: String
+    val trackId: String
+    val timelineStartMs: Long
+    val timelineDurationMs: Long
+}
+
+/**
+ * Visual Timeline Item abstraction representing elements rendered visually onto the canvas surface with spatial stacking (zIndex).
+ */
+sealed interface VisualTimelineItem : TimelineItem {
+    val zIndex: Int
+    val parentItemId: String?
+}
+
 data class VideoClip(
-    val id: String,
+    override val id: String,
     val sourceUri: String,
     val mediaType: MediaType = MediaType.VIDEO,
     val name: String = "Clip",
     val sourceDurationMs: Long = 5000L,
     val sourceStartTimeMs: Long = 0L,
     val sourceEndTimeMs: Long = 5000L,
-    val timelineStartMs: Long = 0L,
+    override val timelineStartMs: Long = 0L,
     val speed: Float = 1.0f,
     val volume: Float = 1.0f,
     val isMuted: Boolean = false,
@@ -120,10 +138,16 @@ data class VideoClip(
     val adjustments: ColorAdjustment = ColorAdjustment(),
     val filter: FilterPreset = FilterPreset.ORIGINAL,
     val effect: EffectPreset = EffectPreset.NONE,
-    val thumbnailColorSeed: Long = 0xFF2A2E44
-) {
+    val thumbnailColorSeed: Long = 0xFF2A2E44,
+    override val trackId: String = "track_video_main",
+    override val zIndex: Int = 0,
+    override val parentItemId: String? = null
+) : VisualTimelineItem {
     val trimmedDurationMs: Long
         get() = ((sourceEndTimeMs - sourceStartTimeMs) / speed).toLong().coerceAtLeast(100L)
+
+    override val timelineDurationMs: Long
+        get() = trimmedDurationMs
 }
 
 enum class AudioTrackType(val displayName: String) {
@@ -135,15 +159,15 @@ enum class AudioTrackType(val displayName: String) {
 }
 
 data class AudioClip(
-    val id: String,
+    override val id: String,
     val sourceUri: String,
     val title: String = "Audio Track",
     val audioTrackType: AudioTrackType = AudioTrackType.MUSIC,
     val sourceDurationMs: Long = 10000L,
     val sourceStartTimeMs: Long = 0L,
     val sourceEndTimeMs: Long = sourceDurationMs,
-    val timelineStartMs: Long = 0L,
-    val timelineDurationMs: Long = sourceDurationMs,
+    override val timelineStartMs: Long = 0L,
+    override val timelineDurationMs: Long = sourceDurationMs,
     val volume: Float = 1.0f,
     val isMuted: Boolean = false,
     val fadeInMs: Long = 0L,
@@ -152,8 +176,8 @@ data class AudioClip(
     val pan: Float = 0.0f, // -1.0f (Left) to +1.0f (Right), 0.0f is Center
     val duckingEnabled: Boolean = false,
     val duckingLevel: Float = 0.3f, // 0.0 to 1.0
-    val trackId: String = "track_audio_music"
-) {
+    override val trackId: String = "track_audio_music"
+) : TimelineItem {
     val trimmedDurationMs: Long
         get() = ((sourceEndTimeMs - sourceStartTimeMs) / speed).toLong().coerceAtLeast(100L)
 
@@ -192,10 +216,10 @@ sealed interface SelectionTarget {
 }
 
 data class TextLayer(
-    val id: String,
+    override val id: String,
     val text: String,
-    val timelineStartMs: Long = 0L,
-    val timelineDurationMs: Long = 3000L,
+    override val timelineStartMs: Long = 0L,
+    override val timelineDurationMs: Long = 3000L,
     val positionX: Float = 0f, // -1f to 1f normalized
     val positionY: Float = 0f,
     val scale: Float = 1f,
@@ -206,8 +230,14 @@ data class TextLayer(
     val hasBackground: Boolean = false,
     val isBold: Boolean = true,
     val alignment: Int = 1, // 0: Start, 1: Center, 2: End
-    val linkedToObjectId: String? = null
-)
+    val linkedToObjectId: String? = null,
+    override val trackId: String = "track_text_main",
+    override val zIndex: Int = 10,
+    val parentId: String? = null
+) : VisualTimelineItem {
+    override val parentItemId: String?
+        get() = parentId ?: linkedToObjectId
+}
 
 data class Timeline(
     val videoClips: List<VideoClip> = emptyList(),

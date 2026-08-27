@@ -45,6 +45,13 @@ interface ITimelineEngine {
     fun toggleTrackLock(timeline: Timeline, trackId: String): Timeline
     fun toggleTrackVisibility(timeline: Timeline, trackId: String): Timeline
     fun isTrackLocked(timeline: Timeline, trackId: String): Boolean
+
+    // Z-Order operations for multi-layer stacking
+    fun bringForward(timeline: Timeline, itemId: String): Timeline
+    fun sendBackward(timeline: Timeline, itemId: String): Timeline
+    fun bringToFront(timeline: Timeline, itemId: String): Timeline
+    fun sendToBack(timeline: Timeline, itemId: String): Timeline
+    fun setItemZIndex(timeline: Timeline, itemId: String, newZIndex: Int): Timeline
 }
 
 class TimelineEngine : ITimelineEngine {
@@ -54,11 +61,13 @@ class TimelineEngine : ITimelineEngine {
     }
 
     private fun isVideoTrackLocked(timeline: Timeline, clipId: String): Boolean {
-        return isTrackLocked(timeline, "track_video_main")
+        val clip = timeline.videoClips.find { it.id == clipId } ?: return false
+        return isTrackLocked(timeline, clip.trackId)
     }
 
     private fun isTextTrackLocked(timeline: Timeline, layerId: String): Boolean {
-        return isTrackLocked(timeline, "track_text_main")
+        val text = timeline.textLayers.find { it.id == layerId } ?: return false
+        return isTrackLocked(timeline, text.trackId)
     }
 
     private fun isAudioTrackLocked(timeline: Timeline, audioId: String): Boolean {
@@ -633,5 +642,119 @@ class TimelineEngine : ITimelineEngine {
             if (it.id == trackId) it.copy(isVisible = !it.isVisible) else it
         }
         return timeline.copy(tracks = updatedTracks)
+    }
+
+    // ==========================================
+    // MULTI-LAYER Z-ORDER ENGINE
+    // ==========================================
+
+    override fun bringForward(timeline: Timeline, itemId: String): Timeline {
+        return shiftVisualItemZOrder(timeline, itemId, delta = 1)
+    }
+
+    override fun sendBackward(timeline: Timeline, itemId: String): Timeline {
+        return shiftVisualItemZOrder(timeline, itemId, delta = -1)
+    }
+
+    override fun bringToFront(timeline: Timeline, itemId: String): Timeline {
+        return moveVisualItemZOrderExtreme(timeline, itemId, toTop = true)
+    }
+
+    override fun sendToBack(timeline: Timeline, itemId: String): Timeline {
+        return moveVisualItemZOrderExtreme(timeline, itemId, toTop = false)
+    }
+
+    override fun setItemZIndex(timeline: Timeline, itemId: String, newZIndex: Int): Timeline {
+        val videoClip = timeline.videoClips.find { it.id == itemId }
+        if (videoClip != null) {
+            if (isTrackLocked(timeline, videoClip.trackId)) return timeline
+            return timeline.copy(
+                videoClips = timeline.videoClips.map {
+                    if (it.id == itemId) it.copy(zIndex = newZIndex) else it
+                }
+            )
+        }
+        val textLayer = timeline.textLayers.find { it.id == itemId }
+        if (textLayer != null) {
+            if (isTrackLocked(timeline, textLayer.trackId)) return timeline
+            return timeline.copy(
+                textLayers = timeline.textLayers.map {
+                    if (it.id == itemId) it.copy(zIndex = newZIndex) else it
+                }
+            )
+        }
+        return timeline
+    }
+
+    private fun shiftVisualItemZOrder(timeline: Timeline, itemId: String, delta: Int): Timeline {
+        val allVisualItems = (timeline.videoClips as List<VisualTimelineItem>) + (timeline.textLayers as List<VisualTimelineItem>)
+        if (allVisualItems.isEmpty()) return timeline
+
+        val targetItem = allVisualItems.find { it.id == itemId } ?: return timeline
+        if (isTrackLocked(timeline, targetItem.trackId)) return timeline
+
+        val sorted = allVisualItems.sortedWith(
+            compareBy<VisualTimelineItem> { it.zIndex }
+                .thenBy { if (it is VideoClip) 0 else 1 }
+                .thenBy { it.id }
+        ).toMutableList()
+
+        val currentIndex = sorted.indexOfFirst { it.id == itemId }
+        if (currentIndex == -1) return timeline
+
+        val targetIndex = currentIndex + delta
+        if (targetIndex !in sorted.indices) return timeline // Already at extreme
+
+        val item = sorted.removeAt(currentIndex)
+        sorted.add(targetIndex, item)
+
+        val updatedZMap = sorted.mapIndexed { idx, itm -> itm.id to (idx * 10) }.toMap()
+
+        return timeline.copy(
+            videoClips = timeline.videoClips.map { clip ->
+                updatedZMap[clip.id]?.let { clip.copy(zIndex = it) } ?: clip
+            },
+            textLayers = timeline.textLayers.map { layer ->
+                updatedZMap[layer.id]?.let { layer.copy(zIndex = it) } ?: layer
+            }
+        )
+    }
+
+    private fun moveVisualItemZOrderExtreme(timeline: Timeline, itemId: String, toTop: Boolean): Timeline {
+        val allVisualItems = (timeline.videoClips as List<VisualTimelineItem>) + (timeline.textLayers as List<VisualTimelineItem>)
+        if (allVisualItems.isEmpty()) return timeline
+
+        val targetItem = allVisualItems.find { it.id == itemId } ?: return timeline
+        if (isTrackLocked(timeline, targetItem.trackId)) return timeline
+
+        val sorted = allVisualItems.sortedWith(
+            compareBy<VisualTimelineItem> { it.zIndex }
+                .thenBy { if (it is VideoClip) 0 else 1 }
+                .thenBy { it.id }
+        ).toMutableList()
+
+        val currentIndex = sorted.indexOfFirst { it.id == itemId }
+        if (currentIndex == -1) return timeline
+
+        if (toTop && currentIndex == sorted.lastIndex) return timeline
+        if (!toTop && currentIndex == 0) return timeline
+
+        val item = sorted.removeAt(currentIndex)
+        if (toTop) {
+            sorted.add(item)
+        } else {
+            sorted.add(0, item)
+        }
+
+        val updatedZMap = sorted.mapIndexed { idx, itm -> itm.id to (idx * 10) }.toMap()
+
+        return timeline.copy(
+            videoClips = timeline.videoClips.map { clip ->
+                updatedZMap[clip.id]?.let { clip.copy(zIndex = it) } ?: clip
+            },
+            textLayers = timeline.textLayers.map { layer ->
+                updatedZMap[layer.id]?.let { layer.copy(zIndex = it) } ?: layer
+            }
+        )
     }
 }

@@ -477,6 +477,85 @@ class EditorViewModel(
         showStatus("Canvas Ratio: ${aspectRatio.label}")
     }
 
+    // Layer Stacking (Z-Order) Operations
+    fun bringSelectedForward() {
+        val selectedId = getSelectedVisualItemId() ?: return
+        bringItemForward(selectedId)
+    }
+
+    fun sendSelectedBackward() {
+        val selectedId = getSelectedVisualItemId() ?: return
+        sendItemBackward(selectedId)
+    }
+
+    fun bringSelectedToFront() {
+        val selectedId = getSelectedVisualItemId() ?: return
+        bringItemToFront(selectedId)
+    }
+
+    fun sendSelectedToBack() {
+        val selectedId = getSelectedVisualItemId() ?: return
+        sendItemToBack(selectedId)
+    }
+
+    fun setSelectedZIndex(newZIndex: Int) {
+        val selectedId = getSelectedVisualItemId() ?: return
+        setItemZIndex(selectedId, newZIndex)
+    }
+
+    fun bringItemForward(itemId: String) {
+        val timeline = _uiState.value.project?.timeline ?: return
+        val newTimeline = timelineEngine.bringForward(timeline, itemId)
+        if (newTimeline != timeline) {
+            updateTimeline(newTimeline)
+            showStatus("Layer Moved Forward")
+        }
+    }
+
+    fun sendItemBackward(itemId: String) {
+        val timeline = _uiState.value.project?.timeline ?: return
+        val newTimeline = timelineEngine.sendBackward(timeline, itemId)
+        if (newTimeline != timeline) {
+            updateTimeline(newTimeline)
+            showStatus("Layer Moved Backward")
+        }
+    }
+
+    fun bringItemToFront(itemId: String) {
+        val timeline = _uiState.value.project?.timeline ?: return
+        val newTimeline = timelineEngine.bringToFront(timeline, itemId)
+        if (newTimeline != timeline) {
+            updateTimeline(newTimeline)
+            showStatus("Layer Moved to Top")
+        }
+    }
+
+    fun sendItemToBack(itemId: String) {
+        val timeline = _uiState.value.project?.timeline ?: return
+        val newTimeline = timelineEngine.sendToBack(timeline, itemId)
+        if (newTimeline != timeline) {
+            updateTimeline(newTimeline)
+            showStatus("Layer Moved to Bottom")
+        }
+    }
+
+    fun setItemZIndex(itemId: String, newZIndex: Int) {
+        val timeline = _uiState.value.project?.timeline ?: return
+        val newTimeline = timelineEngine.setItemZIndex(timeline, itemId, newZIndex)
+        if (newTimeline != timeline) {
+            updateTimeline(newTimeline)
+        }
+    }
+
+    private fun getSelectedVisualItemId(): String? {
+        return when (val sel = _uiState.value.selection) {
+            is SelectionTarget.Video -> sel.clipId
+            is SelectionTarget.Overlay -> sel.overlayId
+            is SelectionTarget.Text -> sel.layerId
+            else -> _uiState.value.selectedClipId ?: _uiState.value.selectedTextLayerId
+        }
+    }
+
     // Text Layers
     fun addTextLayer(text: String = "Short Cut Title") {
         val timeline = _uiState.value.project?.timeline ?: return

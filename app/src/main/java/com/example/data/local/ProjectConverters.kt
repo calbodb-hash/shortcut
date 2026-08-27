@@ -29,6 +29,9 @@ class ProjectConverters {
                 put("filter", clip.filter.name)
                 put("effect", clip.effect.name)
                 put("thumbnailColorSeed", clip.thumbnailColorSeed)
+                put("trackId", clip.trackId)
+                put("zIndex", clip.zIndex)
+                clip.parentItemId?.let { put("parentItemId", it) }
                 
                 // Transform
                 val transformObj = JSONObject().apply {
@@ -114,11 +117,33 @@ class ProjectConverters {
                 put("hasBackground", text.hasBackground)
                 put("isBold", text.isBold)
                 put("alignment", text.alignment)
-                text.linkedToObjectId?.let { put("linkedToObjectId", it) }
+                put("trackId", text.trackId)
+                put("zIndex", text.zIndex)
+                text.parentItemId?.let { 
+                    put("parentItemId", it)
+                    put("linkedToObjectId", it)
+                }
             }
             textArray.put(obj)
         }
         root.put("textLayers", textArray)
+
+        // Tracks
+        val trackArray = JSONArray()
+        for (track in timeline.tracks) {
+            val obj = JSONObject().apply {
+                put("id", track.id)
+                put("type", track.type.name)
+                put("name", track.name)
+                put("isVisible", track.isVisible)
+                put("isLocked", track.isLocked)
+                put("isMuted", track.isMuted)
+                put("volume", track.volume.toDouble())
+                put("zIndex", track.zIndex)
+            }
+            trackArray.put(obj)
+        }
+        root.put("tracks", trackArray)
 
         return root.toString()
     }
@@ -218,6 +243,10 @@ class ProjectConverters {
                         MediaType.VIDEO
                     }
 
+                    val parentItem = if (obj.has("parentItemId") && !obj.isNull("parentItemId")) {
+                        obj.optString("parentItemId", null)
+                    } else null
+
                     videoList.add(
                         VideoClip(
                             id = obj.getString("id"),
@@ -235,7 +264,10 @@ class ProjectConverters {
                             adjustments = adjustments,
                             filter = filter,
                             effect = effect,
-                            thumbnailColorSeed = obj.optLong("thumbnailColorSeed", 0xFF2A2E44)
+                            thumbnailColorSeed = obj.optLong("thumbnailColorSeed", 0xFF2A2E44),
+                            trackId = obj.optString("trackId", "track_video_main"),
+                            zIndex = obj.optInt("zIndex", 0),
+                            parentItemId = parentItem
                         )
                     )
                 }
@@ -284,6 +316,12 @@ class ProjectConverters {
             if (textArray != null) {
                 for (i in 0 until textArray.length()) {
                     val obj = textArray.getJSONObject(i)
+                    val linkedObj = if (obj.has("linkedToObjectId") && !obj.isNull("linkedToObjectId")) {
+                        obj.optString("linkedToObjectId", null)
+                    } else if (obj.has("parentItemId") && !obj.isNull("parentItemId")) {
+                        obj.optString("parentItemId", null)
+                    } else null
+
                     textList.add(
                         TextLayer(
                             id = obj.getString("id"),
@@ -300,13 +338,48 @@ class ProjectConverters {
                             hasBackground = obj.optBoolean("hasBackground", false),
                             isBold = obj.optBoolean("isBold", true),
                             alignment = obj.optInt("alignment", 1),
-                            linkedToObjectId = if (obj.has("linkedToObjectId") && !obj.isNull("linkedToObjectId")) obj.optString("linkedToObjectId", null) else null
+                            linkedToObjectId = linkedObj,
+                            trackId = obj.optString("trackId", "track_text_main"),
+                            zIndex = obj.optInt("zIndex", 10),
+                            parentId = linkedObj
                         )
                     )
                 }
             }
 
-            Timeline(videoClips = videoList, audioClips = audioList, textLayers = textList)
+            val tracksList = mutableListOf<TimelineTrack>()
+            val tracksArray = root.optJSONArray("tracks")
+            if (tracksArray != null) {
+                for (i in 0 until tracksArray.length()) {
+                    val obj = tracksArray.getJSONObject(i)
+                    val trackType = try {
+                        TrackType.valueOf(obj.optString("type", TrackType.VIDEO.name))
+                    } catch (e: Exception) {
+                        TrackType.VIDEO
+                    }
+                    tracksList.add(
+                        TimelineTrack(
+                            id = obj.getString("id"),
+                            type = trackType,
+                            name = obj.optString("name", "Track"),
+                            isVisible = obj.optBoolean("isVisible", true),
+                            isLocked = obj.optBoolean("isLocked", false),
+                            isMuted = obj.optBoolean("isMuted", false),
+                            volume = obj.optDouble("volume", 1.0).toFloat(),
+                            zIndex = obj.optInt("zIndex", 0)
+                        )
+                    )
+                }
+            }
+
+            val finalTracks = if (tracksList.isNotEmpty()) tracksList else Timeline().tracks
+
+            Timeline(
+                videoClips = videoList,
+                audioClips = audioList,
+                textLayers = textList,
+                tracks = finalTracks
+            )
         } catch (e: Exception) {
             Timeline()
         }
