@@ -124,11 +124,19 @@ class EditorViewModel(
         }
     }
 
-    private fun updateTimeline(newTimeline: Timeline, recordHistory: Boolean = true) {
+    private fun updateTimeline(
+        newTimeline: Timeline,
+        action: TimelineAction? = null,
+        recordHistory: Boolean = (action != null)
+    ) {
         val currentProject = _uiState.value.project ?: return
 
-        if (recordHistory) {
-            history.pushState(currentProject.timeline)
+        if (recordHistory && action != null) {
+            history.pushState(
+                currentState = currentProject.timeline,
+                action = action,
+                selection = _uiState.value.selection
+            )
         }
 
         val updatedProject = currentProject.copy(
@@ -294,16 +302,36 @@ class EditorViewModel(
     // Undo / Redo
     fun undo() {
         val currentTimeline = _uiState.value.project?.timeline ?: return
-        val prevTimeline = history.undo(currentTimeline) ?: return
-        updateTimeline(prevTimeline, recordHistory = false)
-        showStatus("Undo")
+        val currentSelection = _uiState.value.selection
+        val result = history.undo(currentTimeline, currentSelection) ?: return
+        
+        updateTimeline(result.timeline, action = null, recordHistory = false)
+        
+        _uiState.update {
+            it.copy(
+                selection = result.selection,
+                canUndo = history.canUndo,
+                canRedo = history.canRedo
+            )
+        }
+        showStatus("Undid: ${result.action.description}")
     }
 
     fun redo() {
         val currentTimeline = _uiState.value.project?.timeline ?: return
-        val nextTimeline = history.redo(currentTimeline) ?: return
-        updateTimeline(nextTimeline, recordHistory = false)
-        showStatus("Redo")
+        val currentSelection = _uiState.value.selection
+        val result = history.redo(currentTimeline, currentSelection) ?: return
+        
+        updateTimeline(result.timeline, action = null, recordHistory = false)
+        
+        _uiState.update {
+            it.copy(
+                selection = result.selection,
+                canUndo = history.canUndo,
+                canRedo = history.canRedo
+            )
+        }
+        showStatus("Redid: ${result.action.description}")
     }
 
     // Timeline Operations
@@ -314,7 +342,7 @@ class EditorViewModel(
 
         val newTimeline = timelineEngine.splitClip(timeline, selectedId, currentPos)
         if (newTimeline != timeline) {
-            updateTimeline(newTimeline)
+            updateTimeline(newTimeline, action = TimelineAction.SplitClip(selectedId, currentPos))
             showStatus("Split Clip")
         }
     }
@@ -322,7 +350,7 @@ class EditorViewModel(
     fun trimClip(clipId: String, newStartMs: Long, newEndMs: Long) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.trimClip(timeline, clipId, newStartMs, newEndMs)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.TrimClip(clipId, newStartMs, newEndMs))
     }
 
     fun deleteSelectedClip() {
@@ -331,7 +359,7 @@ class EditorViewModel(
         val newTimeline = timelineEngine.deleteClip(timeline, selectedId)
         val nextSelected = newTimeline.videoClips.firstOrNull()?.id
         _uiState.update { it.copy(selection = nextSelected?.let { id -> SelectionTarget.Video(id) }) }
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.DeleteClip(selectedId))
         showStatus("Deleted Clip")
     }
 
@@ -339,7 +367,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.duplicateClip(timeline, selectedId)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.DuplicateClip(selectedId))
         showStatus("Duplicated Clip")
     }
 
@@ -352,7 +380,7 @@ class EditorViewModel(
         val newTimeline = timeline.copy(videoClips = updatedClips).let { tl ->
             tl.copy(videoClips = tl.recalculateClipTimelineStarts())
         }
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.GenericAction("Add Media (${newClips.size})"))
         showStatus("Added ${newClips.size} media clip${if (newClips.size > 1) "s" else ""}")
     }
 
@@ -396,7 +424,7 @@ class EditorViewModel(
             )
         }
 
-        updateTimeline(updatedTimeline)
+        updateTimeline(updatedTimeline, action = TimelineAction.AddOverlay(firstAddedId ?: "", "Overlay"))
         if (firstAddedId != null) {
             select(SelectionTarget.Overlay(firstAddedId!!))
         }
@@ -420,7 +448,7 @@ class EditorViewModel(
             timelineStartMs = currentPlayhead
         )
         val added = newTimeline.videoClips.lastOrNull()
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.AddOverlay(added?.id ?: "", name))
         if (added != null) {
             select(SelectionTarget.Overlay(added.id))
         }
@@ -430,34 +458,42 @@ class EditorViewModel(
     fun moveClip(clipId: String, newTimelineStartMs: Long) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.moveClip(timeline, clipId, newTimelineStartMs)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.MoveClip(clipId, newTimelineStartMs))
     }
 
     fun reorderClips(fromIndex: Int, toIndex: Int) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.reorderClips(timeline, fromIndex, toIndex)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.ReorderClips(fromIndex, toIndex))
     }
 
     fun updateSelectedTransform(transform: Transform, recordHistory: Boolean = true) {
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.updateClipTransform(timeline, selectedId, transform)
-        updateTimeline(newTimeline, recordHistory = recordHistory)
+        updateTimeline(
+            newTimeline,
+            action = if (recordHistory) TimelineAction.UpdateTransform(selectedId, newTransform = transform) else null,
+            recordHistory = recordHistory
+        )
     }
 
     fun updateSelectedCrop(crop: CropState, recordHistory: Boolean = true) {
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.updateClipCrop(timeline, selectedId, crop)
-        updateTimeline(newTimeline, recordHistory = recordHistory)
+        updateTimeline(
+            newTimeline,
+            action = if (recordHistory) TimelineAction.GenericAction("Crop Clip") else null,
+            recordHistory = recordHistory
+        )
     }
 
     fun updateSelectedFramingMode(framingMode: FramingMode) {
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.updateClipFramingMode(timeline, selectedId, framingMode)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.GenericAction("Framing: ${framingMode.displayName}"))
         showStatus("Framing: ${framingMode.displayName}")
     }
 
@@ -465,7 +501,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.resetClipTransform(timeline, selectedId)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateTransform(selectedId))
         showStatus("Transform Reset")
     }
 
@@ -473,7 +509,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.resetClipCrop(timeline, selectedId)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.GenericAction("Reset Crop"))
         showStatus("Crop Reset")
     }
 
@@ -481,7 +517,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.resetClipAdjustments(timeline, selectedId)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateAdjustment(selectedId))
         showStatus("Adjustments Reset")
     }
 
@@ -489,14 +525,18 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.updateClipAdjustments(timeline, selectedId, adjustments)
-        updateTimeline(newTimeline, recordHistory = recordHistory)
+        updateTimeline(
+            newTimeline,
+            action = if (recordHistory) TimelineAction.UpdateAdjustment(selectedId, newAdjustment = adjustments) else null,
+            recordHistory = recordHistory
+        )
     }
 
     fun updateSelectedFilter(filter: FilterPreset) {
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.updateClipFilter(timeline, selectedId, filter)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateFilter(selectedId, filter.displayName))
         showStatus("Filter: ${filter.displayName}")
     }
 
@@ -504,7 +544,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.updateClipEffect(timeline, selectedId, effect)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.GenericAction("Effect: ${effect.displayName}"))
         showStatus("Effect: ${effect.displayName}")
     }
 
@@ -512,7 +552,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.updateClipSpeed(timeline, selectedId, speed)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateSpeed(selectedId, newSpeed = speed))
         showStatus("Speed: ${"%.1f".format(speed)}x")
     }
 
@@ -520,14 +560,14 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.updateClipVolume(timeline, selectedId, volume, isMuted)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateVolume(selectedId, volume))
     }
 
     fun replaceSelectedClipMedia(newUri: String, newName: String, durationMs: Long) {
         val timeline = _uiState.value.project?.timeline ?: return
         val selectedId = _uiState.value.selectedClipId ?: return
         val newTimeline = timelineEngine.replaceClipSource(timeline, selectedId, newUri, newName, durationMs)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.ReplaceMedia(selectedId))
         showStatus("Media Replaced")
     }
 
@@ -536,13 +576,17 @@ class EditorViewModel(
         val selectedId = _uiState.value.selectedClipId ?: return
         val currentPos = _uiState.value.playheadMs
         val newTimeline = timelineEngine.freezeFrame(timeline, selectedId, currentPos)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.FreezeFrame(selectedId))
         showStatus("Freeze Frame Created")
     }
 
-    fun commitGestureHistory() {
+    fun commitGestureHistory(action: TimelineAction = TimelineAction.GenericAction("Edit Layer")) {
         val currentTimeline = _uiState.value.project?.timeline ?: return
-        history.pushState(currentTimeline)
+        history.pushState(
+            currentState = currentTimeline,
+            action = action,
+            selection = _uiState.value.selection
+        )
         _uiState.update {
             it.copy(
                 canUndo = history.canUndo,
@@ -592,7 +636,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.bringForward(timeline, itemId)
         if (newTimeline != timeline) {
-            updateTimeline(newTimeline)
+            updateTimeline(newTimeline, action = TimelineAction.ReorderLayers(itemId, "Move Layer Forward"))
             showStatus("Layer Moved Forward")
         }
     }
@@ -601,7 +645,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.sendBackward(timeline, itemId)
         if (newTimeline != timeline) {
-            updateTimeline(newTimeline)
+            updateTimeline(newTimeline, action = TimelineAction.ReorderLayers(itemId, "Move Layer Backward"))
             showStatus("Layer Moved Backward")
         }
     }
@@ -610,7 +654,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.bringToFront(timeline, itemId)
         if (newTimeline != timeline) {
-            updateTimeline(newTimeline)
+            updateTimeline(newTimeline, action = TimelineAction.ReorderLayers(itemId, "Bring Layer to Front"))
             showStatus("Layer Moved to Top")
         }
     }
@@ -619,7 +663,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.sendToBack(timeline, itemId)
         if (newTimeline != timeline) {
-            updateTimeline(newTimeline)
+            updateTimeline(newTimeline, action = TimelineAction.ReorderLayers(itemId, "Send Layer to Back"))
             showStatus("Layer Moved to Bottom")
         }
     }
@@ -628,7 +672,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.setItemZIndex(timeline, itemId, newZIndex)
         if (newTimeline != timeline) {
-            updateTimeline(newTimeline)
+            updateTimeline(newTimeline, action = TimelineAction.ReorderLayers(itemId, "Set Layer Order ($newZIndex)"))
         }
     }
 
@@ -652,20 +696,20 @@ class EditorViewModel(
         )
         val newTimeline = timelineEngine.addTextLayer(timeline, newLayer)
         _uiState.update { it.copy(selection = SelectionTarget.Text(newLayer.id), activeToolGroup = EditorToolGroup.TEXT) }
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.AddText(newLayer.id, text))
         showStatus("Added Text Layer")
     }
 
     fun updateTextLayer(textLayer: TextLayer) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.updateTextLayer(timeline, textLayer)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateText(textLayer.id))
     }
 
     fun updateTextLayerTime(layerId: String, newStartMs: Long, newDurationMs: Long) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.updateTextLayerTime(timeline, layerId, newStartMs, newDurationMs)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateText(layerId))
     }
 
     fun deleteSelectedTextLayer() {
@@ -673,7 +717,7 @@ class EditorViewModel(
         val selectedId = _uiState.value.selectedTextLayerId ?: return
         val newTimeline = timelineEngine.deleteTextLayer(timeline, selectedId)
         _uiState.update { it.copy(selection = null, activeToolGroup = EditorToolGroup.NONE) }
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.DeleteText(selectedId))
         showStatus("Deleted Text Layer")
     }
 
@@ -681,7 +725,7 @@ class EditorViewModel(
     fun addAudioClip(clip: AudioClip) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.addAudioClip(timeline, clip)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.AddAudio(clip.id, clip.title))
         selectAudioClip(clip.id)
         showStatus("Added ${clip.audioTrackType.displayName}")
     }
@@ -708,7 +752,7 @@ class EditorViewModel(
         val currentPos = _uiState.value.playheadMs
         val newTimeline = timelineEngine.splitAudioClip(timeline, audioId, currentPos)
         if (newTimeline != timeline) {
-            updateTimeline(newTimeline)
+            updateTimeline(newTimeline, action = TimelineAction.SplitAudio(audioId))
             showStatus("Split Audio Clip")
         }
     }
@@ -716,19 +760,19 @@ class EditorViewModel(
     fun trimAudioClip(audioId: String, newSourceStartMs: Long, newSourceEndMs: Long) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.trimAudioClip(timeline, audioId, newSourceStartMs, newSourceEndMs)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.TrimAudio(audioId))
     }
 
     fun moveAudioClip(audioId: String, newTimelineStartMs: Long) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.moveAudioClip(timeline, audioId, newTimelineStartMs)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.MoveAudio(audioId))
     }
 
     fun duplicateAudioClip(audioId: String) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.duplicateAudioClip(timeline, audioId)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.DuplicateAudio(audioId))
         showStatus("Duplicated Audio")
     }
 
@@ -738,7 +782,7 @@ class EditorViewModel(
         if (_uiState.value.selectedAudioClipId == audioId) {
             _uiState.update { it.copy(selection = null, activeToolGroup = EditorToolGroup.NONE) }
         }
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.DeleteAudio(audioId))
         showStatus("Deleted Audio Clip")
     }
 
@@ -746,31 +790,31 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val currentClip = timeline.audioClips.firstOrNull { it.id == audioId }
         val newTimeline = timelineEngine.updateAudioClipVolume(timeline, audioId, volume, currentClip?.isMuted ?: false)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateAudioParams(audioId, "Volume"))
     }
 
     fun updateAudioClipFade(audioId: String, fadeInMs: Long, fadeOutMs: Long) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.updateAudioClipFade(timeline, audioId, fadeInMs, fadeOutMs)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateAudioParams(audioId, "Fade"))
     }
 
     fun updateAudioClipSpeed(audioId: String, speed: Float) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.updateAudioClipSpeed(timeline, audioId, speed)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateAudioParams(audioId, "Speed"))
     }
 
     fun updateAudioClipPan(audioId: String, pan: Float) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.updateAudioClipPan(timeline, audioId, pan)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateAudioParams(audioId, "Pan"))
     }
 
     fun toggleAudioClipDucking(audioId: String, enabled: Boolean, level: Float = 0.3f) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.toggleAudioClipDucking(timeline, audioId, enabled, level)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateAudioParams(audioId, "Ducking"))
         showStatus(if (enabled) "Smart Ducking ON" else "Ducking OFF")
     }
 
@@ -780,7 +824,7 @@ class EditorViewModel(
         val nextMuted = !clip.isMuted
         val nextVolume = if (nextMuted) 0f else (if (clip.volume > 0f) clip.volume else 1.0f)
         val newTimeline = timelineEngine.updateAudioClipVolume(timeline, audioId, nextVolume, nextMuted)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.UpdateAudioParams(audioId, "Mute"))
         showStatus(if (nextMuted) "Muted Audio" else "Unmuted Audio")
     }
 
@@ -788,7 +832,7 @@ class EditorViewModel(
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.extractAudioFromVideo(timeline, clipId)
         if (newTimeline != timeline) {
-            updateTimeline(newTimeline)
+            updateTimeline(newTimeline, action = TimelineAction.ExtractAudio(clipId))
             val extractedClip = newTimeline.audioClips.lastOrNull { it.audioTrackType == AudioTrackType.EXTRACTED }
             selectAudioClip(extractedClip?.id)
             showStatus("Extracted Audio from Video")
@@ -798,7 +842,7 @@ class EditorViewModel(
     fun updateAudioClipTime(audioId: String, newStartMs: Long, newDurationMs: Long) {
         val timeline = _uiState.value.project?.timeline ?: return
         val newTimeline = timelineEngine.updateAudioClipTime(timeline, audioId, newStartMs, newDurationMs)
-        updateTimeline(newTimeline)
+        updateTimeline(newTimeline, action = TimelineAction.MoveAudio(audioId))
     }
 
     fun setAudioImportDialogVisible(visible: Boolean) {

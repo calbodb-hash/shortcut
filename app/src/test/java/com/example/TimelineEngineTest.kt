@@ -289,14 +289,14 @@ class TimelineEngineTest {
         val splitTimeline = engine.splitClip(initialTimeline, "clip_1", 2000L)
 
         assertTrue(history.canUndo)
-        val undoneTimeline = history.undo(splitTimeline)
-        assertNotNull(undoneTimeline)
-        assertEquals(2, undoneTimeline?.videoClips?.size)
+        val undoneResult = history.undo(splitTimeline)
+        assertNotNull(undoneResult)
+        assertEquals(2, undoneResult?.timeline?.videoClips?.size)
 
         assertTrue(history.canRedo)
-        val redoneTimeline = history.redo(undoneTimeline!!)
-        assertNotNull(redoneTimeline)
-        assertEquals(3, redoneTimeline?.videoClips?.size)
+        val redoneResult = history.redo(undoneResult!!.timeline)
+        assertNotNull(redoneResult)
+        assertEquals(3, redoneResult?.timeline?.videoClips?.size)
     }
 
     @Test
@@ -307,7 +307,7 @@ class TimelineEngineTest {
         history.pushState(initial)
         val step1 = engine.splitClip(initial, "clip_1", 2000L)
 
-        val undone = history.undo(step1)!!
+        val undone = history.undo(step1)!!.timeline
         assertTrue(history.canRedo)
 
         // Make new edit
