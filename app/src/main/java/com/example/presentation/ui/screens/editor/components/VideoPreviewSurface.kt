@@ -51,8 +51,9 @@ import com.example.ui.theme.*
 @Composable
 fun VideoPreviewSurface(
     aspectRatio: AspectRatio,
-    activeClip: VideoClip?,
-    textLayers: List<TextLayer>,
+    activeClip: VideoClip? = null,
+    videoClips: List<VideoClip> = emptyList(),
+    textLayers: List<TextLayer> = emptyList(),
     playheadMs: Long,
     totalDurationMs: Long,
     isPlaying: Boolean,
@@ -72,6 +73,33 @@ fun VideoPreviewSurface(
         is SelectionTarget.Video -> selection.clipId
         is SelectionTarget.Overlay -> selection.overlayId
         else -> null
+    }
+
+    // Determine all active video & image clips (main track and overlay tracks)
+    val allClips = remember(videoClips, activeClip) {
+        if (videoClips.isNotEmpty()) videoClips else listOfNotNull(activeClip)
+    }
+
+    val activeClips = remember(allClips, activeClip, playheadMs) {
+        allClips.filter { clip ->
+            if (clip.trackId == "track_video_main") {
+                (activeClip != null && clip.id == activeClip.id) ||
+                (playheadMs >= clip.timelineStartMs && playheadMs < clip.timelineStartMs + clip.trimmedDurationMs)
+            } else {
+                playheadMs >= clip.timelineStartMs && playheadMs < clip.timelineStartMs + clip.trimmedDurationMs
+            }
+        }.sortedBy { it.zIndex }
+    }
+
+    val activeTextLayers = remember(textLayers, playheadMs) {
+        textLayers.filter { layer ->
+            playheadMs >= layer.timelineStartMs &&
+            playheadMs <= (layer.timelineStartMs + layer.timelineDurationMs)
+        }.sortedBy { it.zIndex }
+    }
+
+    val selectedClip = remember(allClips, effectiveSelectedClipId) {
+        allClips.find { it.id == effectiveSelectedClipId }
     }
 
     Box(
@@ -97,68 +125,7 @@ fun VideoPreviewSurface(
             val canvasWidthPx = constraints.maxWidth.toFloat()
             val canvasHeightPx = constraints.maxHeight.toFloat()
 
-            // Active Video Clip Surface
-            if (activeClip != null) {
-                val transform = activeClip.transform
-                val crop = transform.crop
-                val framing = transform.framingMode
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(activeClip.id, activeToolGroup, selection) {
-                            if (activeToolGroup == EditorToolGroup.TRANSFORM || activeToolGroup == EditorToolGroup.NONE) {
-                                detectTransformGestures(
-                                    onGesture = { _, pan, zoom, rotation ->
-                                        if (isClipSelected || selection == null) {
-                                            val newScale = (transform.scale * zoom).coerceIn(0.2f, 5.0f)
-                                            val newRot = ((transform.rotation + rotation + 180f) % 360f) - 180f
-                                            val newTx = transform.translationX + pan.x
-                                            val newTy = transform.translationY + pan.y
-                                            onTransformChange(
-                                                transform.copy(
-                                                    scale = newScale,
-                                                    rotation = newRot,
-                                                    translationX = newTx,
-                                                    translationY = newTy
-                                                )
-                                            )
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                ) {
-                    ClipRenderSurface(
-                        clip = activeClip,
-                        playheadMs = playheadMs,
-                        isPlaying = isPlaying,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable {
-                                onSelectTarget(SelectionTarget.Video(activeClip.id))
-                            }
-                    )
-
-                    // Transform Bounding Box Guide Overlay (when in TRANSFORM tool group or video clip is selected)
-                    if (activeToolGroup == EditorToolGroup.TRANSFORM || (isClipSelected && activeClip.id == effectiveSelectedClipId)) {
-                        TransformBoundingBoxOverlay(
-                            transform = transform,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    // Interactive Crop Overlay (when in CROP tool group)
-                    if (activeToolGroup == EditorToolGroup.CROP) {
-                        InteractiveCropOverlay(
-                            crop = crop,
-                            onCropChange = onCropChange,
-                            onCommit = onGestureCommit,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-            } else {
+            if (activeClips.isEmpty() && activeClip == null && textLayers.isEmpty()) {
                 // Empty state
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -181,23 +148,83 @@ fun VideoPreviewSurface(
                         style = MaterialTheme.typography.bodySmall.copy(color = TextMuted)
                     )
                 }
+            } else {
+                // Multi-layer visual composition: All active video clips and overlays rendered in zIndex order
+                for (clip in activeClips) {
+                    val isThisClipSelected = clip.id == effectiveSelectedClipId
+                    val transform = clip.transform
+                    val crop = transform.crop
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(clip.id, activeToolGroup, selection) {
+                                if (isThisClipSelected && (activeToolGroup == EditorToolGroup.TRANSFORM || activeToolGroup == EditorToolGroup.NONE)) {
+                                    detectTransformGestures(
+                                        onGesture = { _, pan, zoom, rotation ->
+                                            val newScale = (transform.scale * zoom).coerceIn(0.15f, 6.0f)
+                                            val newRot = ((transform.rotation + rotation + 180f) % 360f) - 180f
+                                            val newTx = transform.translationX + pan.x
+                                            val newTy = transform.translationY + pan.y
+                                            onTransformChange(
+                                                transform.copy(
+                                                    scale = newScale,
+                                                    rotation = newRot,
+                                                    translationX = newTx,
+                                                    translationY = newTy
+                                                )
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                    ) {
+                        ClipRenderSurface(
+                            clip = clip,
+                            playheadMs = playheadMs,
+                            isPlaying = isPlaying,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable {
+                                    if (clip.trackId == "track_video_main") {
+                                        onSelectTarget(SelectionTarget.Video(clip.id))
+                                    } else {
+                                        onSelectTarget(SelectionTarget.Overlay(clip.id))
+                                    }
+                                }
+                        )
+
+                        // Transform Bounding Box Guide Overlay (when in TRANSFORM tool group or this clip is selected)
+                        if (isThisClipSelected && (activeToolGroup == EditorToolGroup.TRANSFORM || isClipSelected)) {
+                            TransformBoundingBoxOverlay(
+                                transform = transform,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        // Interactive Crop Overlay (when in CROP tool group for selected clip)
+                        if (isThisClipSelected && activeToolGroup == EditorToolGroup.CROP) {
+                            InteractiveCropOverlay(
+                                crop = crop,
+                                onCropChange = onCropChange,
+                                onCommit = onGestureCommit,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
             }
 
             // Text Layers Overlay
-            for (textLayer in textLayers) {
-                val isVisible = playheadMs >= textLayer.timelineStartMs &&
-                        playheadMs <= (textLayer.timelineStartMs + textLayer.timelineDurationMs)
-
-                if (isVisible) {
-                    TextLayerOverlay(
-                        layer = textLayer,
-                        isSelected = textLayer.id == selectedTextLayerId,
-                        onSelect = {
-                            onSelectTarget(SelectionTarget.Text(textLayer.id))
-                            onSelectTextLayer(textLayer.id)
-                        }
-                    )
-                }
+            for (textLayer in activeTextLayers) {
+                TextLayerOverlay(
+                    layer = textLayer,
+                    isSelected = textLayer.id == selectedTextLayerId,
+                    onSelect = {
+                        onSelectTarget(SelectionTarget.Text(textLayer.id))
+                        onSelectTextLayer(textLayer.id)
+                    }
+                )
             }
 
             // Play / Pause Floating Overlay Indicator (when tapping preview or paused)

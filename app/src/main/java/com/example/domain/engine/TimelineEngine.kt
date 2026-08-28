@@ -52,6 +52,19 @@ interface ITimelineEngine {
     fun bringToFront(timeline: Timeline, itemId: String): Timeline
     fun sendToBack(timeline: Timeline, itemId: String): Timeline
     fun setItemZIndex(timeline: Timeline, itemId: String, newZIndex: Int): Timeline
+
+    // Multi-Layer Overlay Operations
+    fun moveClip(timeline: Timeline, clipId: String, newTimelineStartMs: Long): Timeline
+    fun addOverlayClip(
+        timeline: Timeline,
+        sourceUri: String,
+        mediaType: MediaType = MediaType.VIDEO,
+        name: String = "Overlay",
+        durationMs: Long = 4000L,
+        timelineStartMs: Long = 0L,
+        trackId: String? = null,
+        zIndex: Int? = null
+    ): Timeline
 }
 
 class TimelineEngine : ITimelineEngine {
@@ -81,6 +94,7 @@ class TimelineEngine : ITimelineEngine {
         if (clipIndex == -1) return timeline
 
         val clip = timeline.videoClips[clipIndex]
+        val isOverlay = clip.trackId != "track_video_main"
         val clipRelativeSplitMs = splitPositionTimelineMs - clip.timelineStartMs
         val sourceSplitMs = clip.sourceStartTimeMs + (clipRelativeSplitMs * clip.speed).toLong()
 
@@ -92,15 +106,16 @@ class TimelineEngine : ITimelineEngine {
         }
 
         val firstPart = clip.copy(
-            id = UUID.randomUUID().toString(),
-            name = "${clip.name} (Part 1)",
+            id = clip.id,
+            name = clip.name,
             sourceEndTimeMs = sourceSplitMs
         )
 
         val secondPart = clip.copy(
             id = UUID.randomUUID().toString(),
             name = "${clip.name} (Part 2)",
-            sourceStartTimeMs = sourceSplitMs
+            sourceStartTimeMs = sourceSplitMs,
+            timelineStartMs = if (isOverlay) clip.timelineStartMs + firstPart.trimmedDurationMs else clip.timelineStartMs
         )
 
         val updatedClips = timeline.videoClips.toMutableList().apply {
@@ -148,9 +163,11 @@ class TimelineEngine : ITimelineEngine {
         if (clipIndex == -1) return timeline
 
         val original = timeline.videoClips[clipIndex]
+        val isOverlay = original.trackId != "track_video_main"
         val duplicate = original.copy(
             id = UUID.randomUUID().toString(),
-            name = "${original.name} (Copy)"
+            name = "${original.name} (Copy)",
+            timelineStartMs = if (isOverlay) original.timelineStartMs + original.trimmedDurationMs else original.timelineStartMs
         )
 
         val updatedClips = timeline.videoClips.toMutableList().apply {
@@ -158,6 +175,62 @@ class TimelineEngine : ITimelineEngine {
         }
         val updatedTimeline = timeline.copy(videoClips = updatedClips)
         return updatedTimeline.copy(videoClips = updatedTimeline.recalculateClipTimelineStarts())
+    }
+
+    override fun moveClip(timeline: Timeline, clipId: String, newTimelineStartMs: Long): Timeline {
+        if (isVideoTrackLocked(timeline, clipId)) return timeline
+        val clip = timeline.videoClips.find { it.id == clipId } ?: return timeline
+        if (clip.trackId == "track_video_main") return timeline // Main track maintains sequential order
+        val validStart = newTimelineStartMs.coerceAtLeast(0L)
+        val updatedClips = timeline.videoClips.map {
+            if (it.id == clipId) it.copy(timelineStartMs = validStart) else it
+        }
+        return timeline.copy(videoClips = updatedClips)
+    }
+
+    override fun addOverlayClip(
+        timeline: Timeline,
+        sourceUri: String,
+        mediaType: MediaType,
+        name: String,
+        durationMs: Long,
+        timelineStartMs: Long,
+        trackId: String?,
+        zIndex: Int?
+    ): Timeline {
+        val effectiveTrackId = trackId ?: "track_video_overlay"
+        val maxZ = timeline.videoClips.maxOfOrNull { it.zIndex } ?: 0
+        val effectiveZ = zIndex ?: (maxOf(maxZ, 0) + 1)
+        val validDuration = durationMs.coerceAtLeast(TimelineTimeUtils.MIN_CLIP_DURATION_MS)
+
+        val overlayClip = VideoClip(
+            id = "overlay_${UUID.randomUUID().toString().take(8)}",
+            sourceUri = sourceUri,
+            mediaType = mediaType,
+            name = name,
+            sourceDurationMs = validDuration,
+            sourceStartTimeMs = 0L,
+            sourceEndTimeMs = validDuration,
+            timelineStartMs = timelineStartMs.coerceAtLeast(0L),
+            trackId = effectiveTrackId,
+            zIndex = effectiveZ,
+            transform = Transform(scale = 0.55f) // Picture-in-Picture default scale
+        )
+
+        val hasTrack = timeline.tracks.any { it.id == effectiveTrackId }
+        val newTracks = if (!hasTrack) {
+            timeline.tracks + TimelineTrack(
+                id = effectiveTrackId,
+                type = if (mediaType == MediaType.IMAGE) TrackType.GRAPHIC else TrackType.VIDEO_OVERLAY,
+                name = if (mediaType == MediaType.IMAGE) "Image Overlay" else "Video Overlay",
+                zIndex = effectiveZ
+            )
+        } else timeline.tracks
+
+        return timeline.copy(
+            videoClips = timeline.videoClips + overlayClip,
+            tracks = newTracks
+        )
     }
 
     override fun reorderClips(timeline: Timeline, fromIndex: Int, toIndex: Int): Timeline {

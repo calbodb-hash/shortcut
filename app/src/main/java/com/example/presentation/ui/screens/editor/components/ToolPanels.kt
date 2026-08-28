@@ -956,3 +956,147 @@ fun CanvasRatioPanel(
     }
 }
 
+@Composable
+fun ArrangeToolPanel(
+    currentZIndex: Int,
+    onBringToFront: () -> Unit,
+    onSendToBack: () -> Unit,
+    onBringForward: () -> Unit,
+    onSendBackward: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(DarkSurfaceHigh)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Layers, contentDescription = "Layers", tint = ShortCutCyan, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Layer Order (Z-Index: $currentZIndex)",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                )
+            }
+            ShortCutIconButton(
+                icon = Icons.Default.Close,
+                contentDescription = "Close",
+                onClick = onClose
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = onBringToFront,
+                colors = ButtonDefaults.buttonColors(containerColor = ShortCutAccent),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.VerticalAlignTop, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Front", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+            }
+
+            Button(
+                onClick = onBringForward,
+                colors = ButtonDefaults.buttonColors(containerColor = DarkSurface),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = TextHighContrast, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Forward", color = TextHighContrast, fontSize = 11.sp)
+            }
+
+            Button(
+                onClick = onSendBackward,
+                colors = ButtonDefaults.buttonColors(containerColor = DarkSurface),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = TextHighContrast, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Backward", color = TextHighContrast, fontSize = 11.sp)
+            }
+
+            Button(
+                onClick = onSendToBack,
+                colors = ButtonDefaults.buttonColors(containerColor = DarkSurface),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.VerticalAlignBottom, contentDescription = null, tint = TextHighContrast, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Back", color = TextHighContrast, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun OverlayToolPanel(
+    onAddOverlayMedia: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(DarkSurfaceHigh)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Layers, contentDescription = "Overlay", tint = ShortCutCyan, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Overlay / Picture-in-Picture",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                )
+            }
+            ShortCutIconButton(
+                icon = Icons.Default.Close,
+                contentDescription = "Close",
+                onClick = onClose
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = onAddOverlayMedia,
+                colors = ButtonDefaults.buttonColors(containerColor = ShortCutAccent),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Add Overlay Video / Image", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+

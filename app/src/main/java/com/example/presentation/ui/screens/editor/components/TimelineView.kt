@@ -69,6 +69,7 @@ fun TimelineView(
     onSelectTextLayer: (String?) -> Unit,
     onSelectAudioClip: (String?) -> Unit = {},
     onTrimClip: (clipId: String, newStartMs: Long, newEndMs: Long) -> Unit,
+    onMoveClip: (clipId: String, newStartMs: Long) -> Unit = { _, _ -> },
     onTrimAudioClip: (audioId: String, newStartMs: Long, newEndMs: Long) -> Unit = { _, _, _ -> },
     onMoveAudioClip: (audioId: String, newStartMs: Long) -> Unit = { _, _ -> },
     onUpdateTextLayerTime: (layerId: String, newStartMs: Long, newDurationMs: Long) -> Unit = { _, _, _ -> },
@@ -196,9 +197,16 @@ fun TimelineView(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
-                    // Video Track Row
+                    val mainVideoClips = remember(timeline.videoClips) {
+                        timeline.videoClips.filter { it.trackId == "track_video_main" }
+                    }
+                    val overlayClips = remember(timeline.videoClips) {
+                        timeline.videoClips.filter { it.trackId != "track_video_main" }
+                    }
+
+                    // Main Video Track Row
                     VideoTrackRow(
-                        videoClips = timeline.videoClips,
+                        videoClips = mainVideoClips,
                         selectedClipId = selectedClipId,
                         pxPerSecond = pxPerSecond,
                         pxPerSecondPx = pxPerSecondPx,
@@ -220,6 +228,29 @@ fun TimelineView(
                             .fillMaxWidth()
                             .height(if (isCompact) 48.dp else 58.dp)
                     )
+
+                    // Overlay Video / Image Tracks Row (PiP)
+                    if (overlayClips.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(3.dp))
+                        OverlayTrackRow(
+                            overlayClips = overlayClips,
+                            selectedClipId = selectedClipId,
+                            pxPerSecond = pxPerSecond,
+                            pxPerSecondPx = pxPerSecondPx,
+                            isSnappingEnabled = isSnappingEnabled,
+                            timeline = timeline,
+                            onSelectClip = {
+                                onSelectAudioClip(null)
+                                onSelectTextLayer(null)
+                                onSelectClip(it)
+                            },
+                            onTrimClip = onTrimClip,
+                            onMoveClip = onMoveClip,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(if (isCompact) 28.dp else 36.dp)
+                        )
+                    }
 
                     // Text Track Row (if any)
                     if (timeline.textLayers.isNotEmpty()) {
@@ -1014,3 +1045,144 @@ private fun TimelinePlayheadNeedle(
         )
     }
 }
+
+@Composable
+private fun OverlayTrackRow(
+    overlayClips: List<VideoClip>,
+    selectedClipId: String?,
+    pxPerSecond: Float,
+    pxPerSecondPx: Float,
+    isSnappingEnabled: Boolean,
+    timeline: Timeline,
+    onSelectClip: (String?) -> Unit,
+    onTrimClip: (clipId: String, newStartMs: Long, newEndMs: Long) -> Unit,
+    onMoveClip: (clipId: String, newStartMs: Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        for (clip in overlayClips) {
+            val clipStartSec = clip.timelineStartMs / 1000f
+            val clipDurationSec = clip.trimmedDurationMs / 1000f
+            val offsetDp = (clipStartSec * pxPerSecond).dp
+            val widthDp = (clipDurationSec * pxPerSecond).dp.coerceAtLeast(36.dp)
+            val isSelected = clip.id == selectedClipId
+            var dragStartMs by remember(clip.timelineStartMs) { mutableStateOf(clip.timelineStartMs) }
+
+            Box(
+                modifier = Modifier
+                    .offset(x = offsetDp)
+                    .width(widthDp)
+                    .fillMaxHeight()
+                    .padding(vertical = 2.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(
+                        if (clip.mediaType == MediaType.IMAGE) Color(0xFF263238) else Color(0xFF1E293B)
+                    )
+                    .border(
+                        width = if (isSelected) 2.dp else 1.dp,
+                        color = if (isSelected) ShortCutAccent else DarkSurfaceBorder,
+                        shape = RoundedCornerShape(6.dp)
+                    )
+                    .pointerInput(clip.id) {
+                        detectTapGestures(
+                            onTap = {
+                                onSelectClip(if (isSelected) null else clip.id)
+                            }
+                        )
+                    }
+                    .pointerInput(clip.id, pxPerSecondPx) {
+                        detectDragGestures(
+                            onDragStart = {
+                                dragStartMs = clip.timelineStartMs
+                                onSelectClip(clip.id)
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                val deltaMs = (dragAmount.x / pxPerSecondPx * 1000f).roundToLong()
+                                dragStartMs = (dragStartMs + deltaMs).coerceAtLeast(0L)
+                                val finalStartMs = if (isSnappingEnabled) {
+                                    TimelineTimeMapper.findSnapPosition(dragStartMs, timeline).snappedTimeMs
+                                } else dragStartMs
+                                onMoveClip(clip.id, finalStartMs)
+                            }
+                        )
+                    }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = if (clip.mediaType == MediaType.IMAGE) Icons.Default.Image else Icons.Default.Layers,
+                        contentDescription = null,
+                        tint = if (clip.mediaType == MediaType.IMAGE) ShortCutGreen else ShortCutCyan,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = clip.name,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = TextHighContrast,
+                            fontSize = 11.sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "z:${clip.zIndex}",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = TextMuted,
+                            fontSize = 9.sp
+                        )
+                    )
+                }
+
+                // Left Trim Handle
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .width(12.dp)
+                            .fillMaxHeight()
+                            .background(ShortCutAccent.copy(alpha = 0.8f))
+                            .pointerInput(clip.id, pxPerSecondPx) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    val deltaMs = (dragAmount.x / pxPerSecondPx * 1000f).roundToLong()
+                                    val newSourceStart = (clip.sourceStartTimeMs + deltaMs)
+                                        .coerceIn(0L, clip.sourceEndTimeMs - TimelineTimeUtils.MIN_CLIP_DURATION_MS)
+                                    onTrimClip(clip.id, newSourceStart, clip.sourceEndTimeMs)
+                                }
+                            }
+                    )
+
+                    // Right Trim Handle
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .width(12.dp)
+                            .fillMaxHeight()
+                            .background(ShortCutAccent.copy(alpha = 0.8f))
+                            .pointerInput(clip.id, pxPerSecondPx) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    val deltaMs = (dragAmount.x / pxPerSecondPx * 1000f).roundToLong()
+                                    val newSourceEnd = (clip.sourceEndTimeMs + deltaMs)
+                                        .coerceIn(clip.sourceStartTimeMs + TimelineTimeUtils.MIN_CLIP_DURATION_MS, clip.sourceDurationMs)
+                                    onTrimClip(clip.id, clip.sourceStartTimeMs, newSourceEnd)
+                                }
+                            }
+                    )
+                }
+            }
+        }
+    }
+}
+

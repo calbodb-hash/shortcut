@@ -262,11 +262,16 @@ data class Timeline(
     val isNotEmpty: Boolean get() = videoClips.isNotEmpty() || audioClips.isNotEmpty() || textLayers.isNotEmpty()
 
     fun recalculateClipTimelineStarts(): List<VideoClip> {
-        var currentStart = 0L
+        var mainTrackStart = 0L
         return videoClips.map { clip ->
-            val updated = clip.copy(timelineStartMs = currentStart)
-            currentStart += updated.trimmedDurationMs
-            updated
+            if (clip.trackId == "track_video_main") {
+                val updated = clip.copy(timelineStartMs = mainTrackStart)
+                mainTrackStart += updated.trimmedDurationMs
+                updated
+            } else {
+                // Overlay video & image clips preserve their independent timeline positions
+                clip
+            }
         }
     }
 }

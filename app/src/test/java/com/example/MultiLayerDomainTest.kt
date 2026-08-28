@@ -388,4 +388,125 @@ class MultiLayerDomainTest {
         assertEquals("clip_parent_1", text.linkedToObjectId)
         assertEquals("clip_parent_1", text.parentItemId)
     }
+
+    // ==========================================================
+    // 5. PHASE 4.2 MULTI-LAYER OVERLAY & PiP SYSTEM TESTS
+    // ==========================================================
+
+    @Test
+    fun `test addOverlayClip creates independent non-sequential clip`() {
+        val initialTimeline = Timeline(
+            videoClips = listOf(
+                VideoClip(
+                    id = "main_1",
+                    sourceUri = "main.mp4",
+                    sourceDurationMs = 5000L,
+                    sourceStartTimeMs = 0L,
+                    sourceEndTimeMs = 5000L,
+                    timelineStartMs = 0L,
+                    trackId = "track_video_main",
+                    zIndex = 0
+                )
+            ),
+            tracks = listOf(TimelineTrack(id = "track_video_main", type = TrackType.VIDEO_MAIN, name = "Main", zIndex = 0))
+        )
+
+        val updated = engine.addOverlayClip(
+            timeline = initialTimeline,
+            sourceUri = "pip.mp4",
+            name = "PiP Overlay",
+            durationMs = 3000L,
+            mediaType = MediaType.VIDEO,
+            timelineStartMs = 1500L
+        )
+
+        assertEquals(2, updated.videoClips.size)
+        val main = updated.videoClips[0]
+        val overlay = updated.videoClips[1]
+
+        assertEquals("main_1", main.id)
+        assertEquals(0L, main.timelineStartMs)
+
+        assertEquals("track_video_overlay", overlay.trackId)
+        assertEquals(1500L, overlay.timelineStartMs)
+        assertEquals(3000L, overlay.sourceDurationMs)
+        assertTrue(overlay.zIndex > main.zIndex)
+        assertEquals(0.55f, overlay.transform.scale) // PiP default scale
+    }
+
+    @Test
+    fun `test moveClip updates overlay position independently of main track`() {
+        val timeline = createMultiLayerTimeline()
+        val movedTimeline = engine.moveClip(timeline, "clip_overlay", 2500L)
+
+        val overlay = movedTimeline.videoClips.first { it.id == "clip_overlay" }
+        val main = movedTimeline.videoClips.first { it.id == "clip_main" }
+
+        assertEquals(2500L, overlay.timelineStartMs)
+        assertEquals(0L, main.timelineStartMs) // Main video unaffected
+    }
+
+    @Test
+    fun `test trimming overlay clip does not ripple main video track`() {
+        val timeline = createMultiLayerTimeline()
+        // Overlay is 1000..5000 (duration 4000). Trim to 1000..3000 (duration 2000)
+        val trimmed = engine.trimClip(timeline, "clip_overlay", 0L, 2000L)
+
+        val overlay = trimmed.videoClips.first { it.id == "clip_overlay" }
+        val main = trimmed.videoClips.first { it.id == "clip_main" }
+
+        assertEquals(1000L, overlay.timelineStartMs)
+        assertEquals(2000L, overlay.trimmedDurationMs)
+        assertEquals(0L, main.timelineStartMs)
+        assertEquals(6000L, main.trimmedDurationMs)
+    }
+
+    @Test
+    fun `test splitting overlay clip does not affect main video timing`() {
+        val timeline = createMultiLayerTimeline()
+        // Overlay starts at 1000ms and duration 4000ms. Split at timeline position 2500ms (offset 1500ms)
+        val splitTimeline = engine.splitClip(timeline, "clip_overlay", 2500L)
+
+        assertEquals(3, splitTimeline.videoClips.size)
+        val main = splitTimeline.videoClips.first { it.id == "clip_main" }
+        val seg1 = splitTimeline.videoClips.first { it.id == "clip_overlay" }
+        val seg2 = splitTimeline.videoClips.first { it.id != "clip_main" && it.id != "clip_overlay" }
+
+        assertEquals(0L, main.timelineStartMs)
+        assertEquals(1000L, seg1.timelineStartMs)
+        assertEquals(1500L, seg1.trimmedDurationMs)
+        assertEquals(2500L, seg2.timelineStartMs)
+        assertEquals(2500L, seg2.trimmedDurationMs)
+    }
+
+    @Test
+    fun `test deleting overlay clip does not cause gaps or ripple in main track`() {
+        val timeline = createMultiLayerTimeline()
+        val afterDelete = engine.deleteClip(timeline, "clip_overlay")
+
+        assertEquals(1, afterDelete.videoClips.size)
+        val main = afterDelete.videoClips[0]
+        assertEquals("clip_main", main.id)
+        assertEquals(0L, main.timelineStartMs)
+        assertEquals(6000L, main.trimmedDurationMs)
+    }
+
+    @Test
+    fun `test simultaneous visual items query and zIndex sorting`() {
+        val timeline = createMultiLayerTimeline()
+
+        // At 2000ms:
+        // Main video: active (0..6000), zIndex 0
+        // Overlay video: active (1000..5000), zIndex 5
+        // Text layer: active (500..3500), zIndex 10
+        val visualItems = mutableListOf<VisualTimelineItem>()
+        visualItems.addAll(timeline.videoClips.filter { 2000L in it.timelineStartMs until (it.timelineStartMs + it.trimmedDurationMs) })
+        visualItems.addAll(timeline.textLayers.filter { 2000L in it.timelineStartMs until (it.timelineStartMs + it.timelineDurationMs) })
+        val sorted = visualItems.sortedBy { it.zIndex }
+
+        assertEquals(3, sorted.size)
+        assertEquals("clip_main", sorted[0].id)
+        assertEquals("clip_overlay", sorted[1].id)
+        assertEquals("text_title", sorted[2].id)
+    }
 }

@@ -31,6 +31,8 @@ enum class EditorToolGroup {
     FILTER,
     EFFECT,
     CANVAS,
+    ARRANGE,
+    OVERLAY,
     EXPORT
 }
 
@@ -52,9 +54,15 @@ data class EditorUiState(
     val pxPerSecond: Float = 80f,
     val isSnappingEnabled: Boolean = true
 ) {
-    val selectedClipId: String? get() = (selection as? SelectionTarget.Video)?.clipId
+    val selectedClipId: String? get() = when (selection) {
+        is SelectionTarget.Video -> selection.clipId
+        is SelectionTarget.Overlay -> selection.overlayId
+        else -> null
+    }
     val selectedTextLayerId: String? get() = (selection as? SelectionTarget.Text)?.layerId
     val selectedAudioClipId: String? get() = (selection as? SelectionTarget.Audio)?.audioId
+    val isOverlaySelected: Boolean get() = selection is SelectionTarget.Overlay ||
+        (selectedClipId != null && project?.timeline?.videoClips?.find { it.id == selectedClipId }?.trackId != "track_video_main")
 }
 
 class EditorViewModel(
@@ -346,6 +354,83 @@ class EditorViewModel(
         }
         updateTimeline(newTimeline)
         showStatus("Added ${newClips.size} media clip${if (newClips.size > 1) "s" else ""}")
+    }
+
+    fun addOverlayMediaUris(context: Context, uris: List<android.net.Uri>) {
+        val timeline = _uiState.value.project?.timeline ?: return
+        val currentPlayhead = _uiState.value.playheadMs
+        var updatedTimeline = timeline
+        var firstAddedId: String? = null
+
+        uris.forEachIndexed { index, uri ->
+            val parsed = com.example.data.repository.MediaPickerHelper.parseMediaUri(context, uri)
+            val isImage = parsed.mediaType == MediaType.IMAGE
+            val duration = if (isImage) 4000L else parsed.sourceDurationMs
+            val overlayTrackId = "track_video_overlay"
+            val newZ = (updatedTimeline.videoClips.maxOfOrNull { it.zIndex } ?: 0) + 1
+
+            val overlayClip = parsed.copy(
+                id = "overlay_${UUID.randomUUID().toString().take(8)}",
+                timelineStartMs = currentPlayhead + (index * 500L),
+                sourceDurationMs = duration,
+                sourceEndTimeMs = duration,
+                trackId = overlayTrackId,
+                zIndex = newZ,
+                transform = Transform(scale = 0.55f)
+            )
+            if (firstAddedId == null) firstAddedId = overlayClip.id
+
+            val hasTrack = updatedTimeline.tracks.any { it.id == overlayTrackId }
+            val newTracks = if (!hasTrack) {
+                updatedTimeline.tracks + TimelineTrack(
+                    id = overlayTrackId,
+                    type = if (isImage) TrackType.GRAPHIC else TrackType.VIDEO_OVERLAY,
+                    name = if (isImage) "Image Overlay" else "Video Overlay",
+                    zIndex = newZ
+                )
+            } else updatedTimeline.tracks
+
+            updatedTimeline = updatedTimeline.copy(
+                videoClips = updatedTimeline.videoClips + overlayClip,
+                tracks = newTracks
+            )
+        }
+
+        updateTimeline(updatedTimeline)
+        if (firstAddedId != null) {
+            select(SelectionTarget.Overlay(firstAddedId!!))
+        }
+        showStatus("Added Overlay")
+    }
+
+    fun addOverlayClip(
+        sourceUri: String,
+        mediaType: MediaType = MediaType.VIDEO,
+        name: String = "Overlay",
+        durationMs: Long = 4000L
+    ) {
+        val timeline = _uiState.value.project?.timeline ?: return
+        val currentPlayhead = _uiState.value.playheadMs
+        val newTimeline = timelineEngine.addOverlayClip(
+            timeline = timeline,
+            sourceUri = sourceUri,
+            mediaType = mediaType,
+            name = name,
+            durationMs = durationMs,
+            timelineStartMs = currentPlayhead
+        )
+        val added = newTimeline.videoClips.lastOrNull()
+        updateTimeline(newTimeline)
+        if (added != null) {
+            select(SelectionTarget.Overlay(added.id))
+        }
+        showStatus("Added ${if (mediaType == MediaType.IMAGE) "Image" else "Video"} Overlay")
+    }
+
+    fun moveClip(clipId: String, newTimelineStartMs: Long) {
+        val timeline = _uiState.value.project?.timeline ?: return
+        val newTimeline = timelineEngine.moveClip(timeline, clipId, newTimelineStartMs)
+        updateTimeline(newTimeline)
     }
 
     fun reorderClips(fromIndex: Int, toIndex: Int) {

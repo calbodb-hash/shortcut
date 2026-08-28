@@ -73,12 +73,31 @@ fun EditorScreen(
         }
     }
 
+    val addOverlayLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            editorViewModel.addOverlayMediaUris(context, uris)
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissionsMap ->
         val anyGranted = permissionsMap.values.any { it }
         if (anyGranted || permissionsMap.isEmpty()) {
             addMediaLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+            )
+        }
+    }
+
+    val overlayPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissionsMap ->
+        val anyGranted = permissionsMap.values.any { it }
+        if (anyGranted || permissionsMap.isEmpty()) {
+            addOverlayLauncher.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
             )
         }
@@ -94,6 +113,19 @@ fun EditorScreen(
             )
         } else {
             permissionLauncher.launch(requiredPermissions)
+        }
+    }
+
+    val launchAddOverlayWithPermissionCheck = {
+        val allGranted = requiredPermissions.all { perm ->
+            ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
+        }
+        if (allGranted) {
+            addOverlayLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+            )
+        } else {
+            overlayPermissionLauncher.launch(requiredPermissions)
         }
     }
 
@@ -149,6 +181,7 @@ fun EditorScreen(
                     VideoPreviewSurface(
                         aspectRatio = project.canvasRatio,
                         activeClip = uiState.activeClip ?: selectedClip,
+                        videoClips = project.timeline.videoClips,
                         textLayers = project.timeline.textLayers,
                         playheadMs = uiState.playheadMs,
                         totalDurationMs = project.timeline.totalDurationMs,
@@ -184,6 +217,9 @@ fun EditorScreen(
                         onSelectAudioClip = { editorViewModel.selectAudioClip(it) },
                         onTrimClip = { clipId, startMs, endMs ->
                             editorViewModel.trimClip(clipId, startMs, endMs)
+                        },
+                        onMoveClip = { clipId, startMs ->
+                            editorViewModel.moveClip(clipId, startMs)
                         },
                         onTrimAudioClip = { audioId, startMs, endMs ->
                             editorViewModel.trimAudioClip(audioId, startMs, endMs)
@@ -406,6 +442,28 @@ fun EditorScreen(
                                 CanvasRatioPanel(
                                     activeRatio = project.canvasRatio,
                                     onSelectRatio = { editorViewModel.updateCanvasRatio(it) },
+                                    onClose = { editorViewModel.closeToolPanel() },
+                                    modifier = Modifier.heightIn(max = maxPanelHeight)
+                                )
+                            }
+                            EditorToolGroup.ARRANGE -> {
+                                val currentZ = selectedClip?.zIndex ?: selectedTextLayer?.zIndex ?: 0
+                                ArrangeToolPanel(
+                                    currentZIndex = currentZ,
+                                    onBringToFront = { editorViewModel.bringSelectedToFront() },
+                                    onSendToBack = { editorViewModel.sendSelectedToBack() },
+                                    onBringForward = { editorViewModel.bringSelectedForward() },
+                                    onSendBackward = { editorViewModel.sendSelectedBackward() },
+                                    onClose = { editorViewModel.closeToolPanel() },
+                                    modifier = Modifier.heightIn(max = maxPanelHeight)
+                                )
+                            }
+                            EditorToolGroup.OVERLAY -> {
+                                OverlayToolPanel(
+                                    onAddOverlayMedia = {
+                                        launchAddOverlayWithPermissionCheck()
+                                        editorViewModel.closeToolPanel()
+                                    },
                                     onClose = { editorViewModel.closeToolPanel() },
                                     modifier = Modifier.heightIn(max = maxPanelHeight)
                                 )

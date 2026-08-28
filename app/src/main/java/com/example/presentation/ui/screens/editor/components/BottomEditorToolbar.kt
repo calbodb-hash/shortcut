@@ -107,6 +107,13 @@ fun BottomEditorToolbar(
                     testTag = "toolbar_volume_button"
                 )
                 ToolbarItem(
+                    icon = Icons.Default.Layers,
+                    label = "Arrange",
+                    isSelected = activeToolGroup == EditorToolGroup.ARRANGE,
+                    onClick = { onToolClick(EditorToolGroup.ARRANGE) },
+                    testTag = "toolbar_arrange_button"
+                )
+                ToolbarItem(
                     icon = Icons.Default.ContentCopy,
                     label = "Duplicate",
                     isSelected = false,
@@ -201,6 +208,13 @@ fun BottomEditorToolbar(
                     isSelected = activeToolGroup == EditorToolGroup.AUDIO,
                     onClick = { onToolClick(EditorToolGroup.AUDIO) },
                     testTag = "toolbar_audio_button"
+                )
+                ToolbarItem(
+                    icon = Icons.Default.Layers,
+                    label = "Overlay",
+                    isSelected = activeToolGroup == EditorToolGroup.OVERLAY,
+                    onClick = { onToolClick(EditorToolGroup.OVERLAY) },
+                    testTag = "toolbar_overlay_button"
                 )
                 ToolbarItem(
                     icon = Icons.Default.TextFields,
